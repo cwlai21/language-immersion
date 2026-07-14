@@ -51,11 +51,20 @@ export default {
     const stopTimer = async (started) => {
       await env.STATE.delete(key);
       let seconds = Math.round((Date.now() - Number(started)) / 1000);
-      if (seconds < 60) return new Response('⏹ Stopped — under a minute, nothing logged.');
+      if (seconds < 60) return new Response('⏹ Under a minute — nothing logged.');
       seconds = Math.min(seconds, 6 * 3600);
-      await insertRow(env, { seconds, lang, type, title, source: 'timer' });
+      const minutes = Math.round(seconds / 60);
+      const row = await insertRow(env, { seconds, lang, type, title, source: 'timer' });
+      if (row && row.id) {
+        // Remember the row so /title can label it right after.
+        await env.STATE.put(
+          `last:${type}:${lang}`,
+          JSON.stringify({ id: row.id, minutes }),
+          { expirationTtl: 3600 }
+        );
+      }
       return new Response(
-        `✅ Stopped — logged ${Math.round(seconds / 60)}m of ${flag} ${type} (${clock(started)}–${clock(Date.now())}).`
+        `✅ ${minutes}m of ${flag} ${type} (${clock(started)}–${clock(Date.now())}). What did you study?`
       );
     };
 
@@ -95,6 +104,29 @@ export default {
         return started ? stopTimer(started) : startTimer();
       }
 
+      // Attach a title to the most recently stopped timer session.
+      // Title comes from ?title= or a POSTed form field (Shortcuts-friendly:
+      // form encoding handles spaces/accents without manual URL-encoding).
+      if (url.pathname === '/title') {
+        let text = url.searchParams.get('title') || '';
+        if (!text && request.method === 'POST') {
+          try {
+            const fd = await request.formData();
+            text = (fd.get('title') || '').toString();
+          } catch { /* no form body */ }
+        }
+        text = text.trim();
+        if (!text) return new Response('need a title (?title= or POST form field "title")', { status: 400 });
+        const lastRaw = await env.STATE.get(`last:${type}:${lang}`);
+        if (!lastRaw) return new Response('🤷 No recent session to label.');
+        const last = JSON.parse(lastRaw);
+        await sb(env, `listening_sessions?id=eq.${last.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ title: text }),
+        });
+        return new Response(`📝 Saved — ${last.minutes}m of ${flag} ${type}: “${text}”`);
+      }
+
       if (url.pathname === '/log') {
         const minutes = parseInt(url.searchParams.get('minutes'), 10);
         if (!minutes || minutes < 1 || minutes > 1440) {
@@ -111,8 +143,9 @@ export default {
 };
 
 async function insertRow(env, { seconds, lang, type, title, source }) {
-  await sb(env, 'listening_sessions', {
+  const rows = await sb(env, 'listening_sessions', {
     method: 'POST',
+    headers: { Prefer: 'return=representation' },
     body: JSON.stringify({
       date: logicalDate(),
       seconds,
@@ -123,6 +156,7 @@ async function insertRow(env, { seconds, lang, type, title, source }) {
       source,
     }),
   });
+  return rows && rows[0];
 }
 
 async function poll(env) {
