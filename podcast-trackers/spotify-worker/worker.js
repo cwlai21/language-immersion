@@ -78,13 +78,15 @@ export default {
           await env.STATE.put(key, String(Date.now()), { expirationTtl: 12 * 3600 });
           return htmlResponse(
             `<h2>▶️ ${flag} ${type} timer started at ${clock(Date.now())}.</h2>
-             <p>Bonne lecture ! Open this again to stop.</p>`
+             <p>Bonne lecture ! Open this again to stop.</p>
+             <p><small>This tab closes itself in 30 seconds.</small></p>`,
+            { closeAfterMs: 30000 }
           );
         }
         await env.STATE.delete(key);
         let seconds = Math.round((Date.now() - Number(started)) / 1000);
         if (seconds < 60) {
-          return htmlResponse('<h2>⏹ Under a minute — nothing logged.</h2>');
+          return htmlResponse('<h2>⏹ Under a minute — nothing logged.</h2>', { closeAfterMs: 5000 });
         }
         seconds = Math.min(seconds, 6 * 3600);
         const minutes = Math.round(seconds / 60);
@@ -187,7 +189,9 @@ export default {
           body: JSON.stringify({ title: text }),
         });
         const msg = `📝 Saved — ${last.minutes}m of ${flag} ${type}: “${text}”`;
-        return fromForm ? htmlResponse(`<h2>${msg}</h2><p>You can close this tab.</p>`) : new Response(msg);
+        return fromForm
+          ? htmlResponse(`<h2>${msg}</h2>`, { closeAfterMs: 1500 })
+          : new Response(msg);
       }
 
       if (url.pathname === '/log') {
@@ -205,11 +209,16 @@ export default {
   },
 };
 
-function htmlResponse(body) {
+function htmlResponse(body, { closeAfterMs } = {}) {
+  // window.close() works in iOS Safari for tabs opened from another app
+  // (like Shortcuts' Open URL) because they have no navigation history.
+  const closer = closeAfterMs
+    ? `<script>setTimeout(() => { window.open('', '_self'); window.close(); }, ${closeAfterMs});</script>`
+    : '';
   return new Response(
     `<!DOCTYPE html><html><head><meta charset="utf-8">
      <meta name="viewport" content="width=device-width, initial-scale=1">
-     <title>Écoute</title>
+     <title>Écoute</title>${closer}
      <style>
        body { font-family: -apple-system, sans-serif; margin: 0; padding: 28px 20px;
               background: #f4f6fb; color: #1a2033; }
