@@ -328,6 +328,19 @@ function sessionRow(s) {
   const meta = document.createElement('div');
   meta.className = 'session-meta';
   const bits = [s.date];
+  // Start–stop clock times, derived from the row's insert timestamp:
+  // spotify rows are created at session start (then grown); the other live
+  // trackers insert at session end. Anki/import/manual have no meaningful clock.
+  if (s.created_at && ['auto', 'timer', 'apple', 'spotify'].includes(s.source)) {
+    const created = new Date(s.created_at);
+    const startMs = s.source === 'spotify' ? created.getTime() : created.getTime() - s.seconds * 1000;
+    const endMs = s.source === 'spotify' ? created.getTime() + s.seconds * 1000 : created.getTime();
+    const hm = (ms) => {
+      const d = new Date(ms);
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    bits.push(`${hm(startMs)}–${hm(endMs)}`);
+  }
   if (s.channel) bits.push(s.channel);
   if (['auto', 'anki', 'apple', 'spotify'].includes(s.source)) bits.push('🤖 auto');
   if (s.source === 'import') bits.push('📥 est.');
