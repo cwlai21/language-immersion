@@ -19,8 +19,13 @@ export default {
     ctx.waitUntil(poll(env));
   },
 
-  // HTTP endpoint for iPhone Shortcuts: /toggle starts/stops a reading timer
-  // (state in KV), /log records minutes directly. Guarded by ?token=.
+  // HTTP endpoints for iPhone Shortcuts (guarded by ?token=):
+  //   /start  — start a timer (says since when if already running)
+  //   /stop   — stop the timer and log the session
+  //   /status — show running timers with elapsed time
+  //   /toggle — legacy start/stop in one URL
+  //   /log?minutes=N — record minutes directly
+  // Params: lang=fr|en (default fr), type (default reading), title.
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.searchParams.get('token') !== env.LOG_TOKEN) {
@@ -30,21 +35,64 @@ export default {
     const type = url.searchParams.get('type') || 'reading';
     const title = url.searchParams.get('title') || '';
     const flag = lang === 'fr' ? '🇫🇷' : '🇬🇧';
+    const key = `open:${type}:${lang}`;
+
+    const clock = (ms) => {
+      const d = new Date(Number(ms) + 8 * 3600 * 1000); // Asia/Taipei
+      return d.toISOString().slice(11, 16);
+    };
+    const elapsedMin = (ms) => Math.round((Date.now() - Number(ms)) / 60000);
+
+    const startTimer = async () => {
+      await env.STATE.put(key, String(Date.now()), { expirationTtl: 12 * 3600 });
+      return new Response(`▶️ ${flag} ${type} timer started at ${clock(Date.now())}.`);
+    };
+
+    const stopTimer = async (started) => {
+      await env.STATE.delete(key);
+      let seconds = Math.round((Date.now() - Number(started)) / 1000);
+      if (seconds < 60) return new Response('⏹ Stopped — under a minute, nothing logged.');
+      seconds = Math.min(seconds, 6 * 3600);
+      await insertRow(env, { seconds, lang, type, title, source: 'timer' });
+      return new Response(
+        `✅ Stopped — logged ${Math.round(seconds / 60)}m of ${flag} ${type} (${clock(started)}–${clock(Date.now())}).`
+      );
+    };
 
     try {
-      if (url.pathname === '/toggle') {
-        const key = `open:${type}:${lang}`;
+      if (url.pathname === '/start') {
         const started = await env.STATE.get(key);
-        if (!started) {
-          await env.STATE.put(key, String(Date.now()), { expirationTtl: 12 * 3600 });
-          return new Response(`▶️ Started ${type} ${flag} — tap again to stop.`);
+        if (started) {
+          return new Response(
+            `⏱ Already running — ${flag} ${type} since ${clock(started)} (${elapsedMin(started)}m). Use Stop to log it.`
+          );
         }
-        await env.STATE.delete(key);
-        let seconds = Math.round((Date.now() - Number(started)) / 1000);
-        if (seconds < 60) return new Response('⏹ Under a minute — discarded.');
-        seconds = Math.min(seconds, 6 * 3600);
-        await insertRow(env, { seconds, lang, type, title, source: 'timer' });
-        return new Response(`✅ Logged ${Math.round(seconds / 60)}m of ${type} ${flag}.`);
+        return startTimer();
+      }
+
+      if (url.pathname === '/stop') {
+        const started = await env.STATE.get(key);
+        if (!started) return new Response(`🤷 No ${flag} ${type} timer running.`);
+        return stopTimer(started);
+      }
+
+      if (url.pathname === '/status') {
+        const { keys } = await env.STATE.list({ prefix: 'open:' });
+        if (!keys.length) return new Response('🤷 No timers running.');
+        const lines = [];
+        for (const k of keys) {
+          const startedAt = await env.STATE.get(k.name);
+          const [, kType, kLang] = k.name.split(':');
+          lines.push(
+            `⏱ ${kLang === 'fr' ? '🇫🇷' : '🇬🇧'} ${kType} — running since ${clock(startedAt)} (${elapsedMin(startedAt)}m)`
+          );
+        }
+        return new Response(lines.join('\n'));
+      }
+
+      if (url.pathname === '/toggle') {
+        const started = await env.STATE.get(key);
+        return started ? stopTimer(started) : startTimer();
       }
 
       if (url.pathname === '/log') {
@@ -53,12 +101,12 @@ export default {
           return new Response('need ?minutes=1..1440', { status: 400 });
         }
         await insertRow(env, { seconds: minutes * 60, lang, type, title, source: 'manual' });
-        return new Response(`✅ Logged ${minutes}m of ${type} ${flag}.`);
+        return new Response(`✅ Logged ${minutes}m of ${flag} ${type}.`);
       }
     } catch (e) {
       return new Response(`error: ${e.message}`, { status: 500 });
     }
-    return new Response('routes: /toggle /log?minutes=N (params: lang=fr|en, type, title)', { status: 404 });
+    return new Response('routes: /start /stop /status /toggle /log?minutes=N (params: lang=fr|en, type, title)', { status: 404 });
   },
 };
 
