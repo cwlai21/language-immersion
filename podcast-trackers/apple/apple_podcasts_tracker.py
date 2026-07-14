@@ -12,6 +12,7 @@ First run only records baselines; deltas start from the second run.
 import json
 import re
 import sqlite3
+import subprocess
 import sys
 import time
 import urllib.request
@@ -109,7 +110,18 @@ def recent_episodes():
     return rows
 
 
+def ensure_podcasts_running():
+    """iCloud play-state sync only happens while Podcasts.app runs — launch it
+    hidden in the background so iPhone listening keeps flowing into the local
+    library. Freshly launched, its sync lands within a couple of minutes, so
+    the *next* tracker run picks the new data up."""
+    if subprocess.run(["pgrep", "-x", "Podcasts"], capture_output=True).returncode != 0:
+        subprocess.run(["open", "-g", "-j", "-a", "Podcasts"])
+        log("Podcasts.app was not running — launched it hidden for iCloud sync")
+
+
 def main():
+    ensure_podcasts_running()
     cfg = load_config()
     first_run = not STATE_PATH.exists()
     state = {"episodes": {}, "last_run": 0}
@@ -131,7 +143,8 @@ def main():
             episodes[uuid] = playhead
             continue
 
-        delta = playhead - episodes.get(uuid, 0)
+        base = episodes.get(uuid, 0)
+        delta = playhead - base
         if delta <= 0:  # rewind or no progress — just re-baseline
             episodes[uuid] = playhead
             continue
@@ -156,7 +169,9 @@ def main():
         }
         try:
             sb_insert(cfg, row)
-            episodes[uuid] = playhead  # only advance the baseline once saved
+            # Advance only by what was logged: if the sanity cap clipped a
+            # lump of late-synced listening, the rest is logged next run.
+            episodes[uuid] = base + capped
             inserted += 1
             log(f"logged {int(capped)}s [{lang}] {show_title} — {ep_title}")
         except Exception as e:
