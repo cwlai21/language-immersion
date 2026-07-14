@@ -79,8 +79,8 @@ export default {
           return htmlResponse(
             `<h2>▶️ ${flag} ${type} timer started at ${clock(Date.now())}.</h2>
              <p>Bonne lecture ! Open this again to stop.</p>
-             <p><small>This tab closes itself in 30 seconds.</small></p>`,
-            { closeAfterMs: 30000 }
+             <p><small>This tab closes itself in 10 seconds.</small></p>`,
+            { closeAfterMs: 10000 }
           );
         }
         await env.STATE.delete(key);
