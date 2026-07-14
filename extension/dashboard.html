@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Écoute — Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-flag"><span></span><span></span><span></span></span>
+      <div>
+        <h1>Écoute</h1>
+        <p class="brand-sub" data-i18n="tagline">French Listening Tracker</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button id="exportBtn" class="btn btn-ghost" data-i18n="export">Export CSV</button>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <div class="lang-filter">
+      <button class="pill active" data-langfilter="all" data-i18n="all">All</button>
+      <button class="pill" data-langfilter="fr">🇫🇷 <span data-i18n="french">Français</span></button>
+      <button class="pill" data-langfilter="en">🇬🇧 <span data-i18n="english">English</span></button>
+    </div>
+
+    <section class="stats-grid">
+      <div class="stat-card">
+        <p class="stat-label" data-i18n="today">Today</p>
+        <p class="stat-value" id="statToday">0m</p>
+        <div class="goal-bar"><div class="goal-fill" id="goalFill"></div></div>
+        <p class="stat-sub" id="goalText"></p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label" data-i18n="thisWeek">This Week</p>
+        <p class="stat-value" id="statWeek">0m</p>
+        <p class="stat-sub" id="statWeekAvg"></p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label" data-i18n="thisMonth">This Month</p>
+        <p class="stat-value" id="statMonth">0m</p>
+        <p class="stat-sub" id="statMonthAvg"></p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label" data-i18n="streak">Day Streak</p>
+        <p class="stat-value" id="statStreak">0 🔥</p>
+        <p class="stat-sub" id="statTotal"></p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="goal-setting no-border">
+        <label data-i18n="dailyGoals">Daily goals (min)</label>
+        <span>🇫🇷</span><input type="number" id="goalInputFr" class="input small" min="5" max="1440" step="5">
+        <span>🇬🇧</span><input type="number" id="goalInputEn" class="input small" min="5" max="1440" step="5">
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="dash-header">
+        <h2 data-i18n="dashboard">Dashboard</h2>
+        <div class="tabs">
+          <button class="tab active" data-view="daily" data-i18n="daily">Daily</button>
+          <button class="tab" data-view="weekly" data-i18n="weekly">Weekly</button>
+          <button class="tab" data-view="monthly" data-i18n="monthly">Monthly</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="mainChart"></canvas></div>
+      <div class="chart-wrap donut-wrap">
+        <h3 data-i18n="bySource">By Source</h3>
+        <canvas id="typeChart"></canvas>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="recentSessions">Recent Sessions</h2>
+      <ul id="sessionList" class="session-list"></ul>
+      <p id="emptyMsg" class="empty-msg" data-i18n="noSessions">No sessions yet.</p>
+      <p id="errorMsg" class="empty-msg error" hidden></p>
+    </section>
+
+  </main>
+
+  <script src="vendor/chart.umd.min.js"></script>
+  <script src="storage-shim.js"></script>
+  <script src="config.js"></script>
+  <script src="supabase.js"></script>
+  <script src="i18n.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

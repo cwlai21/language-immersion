@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="pop-header">
+    <div class="brand">
+      <span class="brand-flag"><span></span><span></span><span></span></span>
+      <strong>Écoute</strong>
+    </div>
+  </header>
+
+  <!-- Current video status -->
+  <section class="status" id="statusBox">
+    <p class="status-line" id="statusLine" data-i18n="notYouTube">Open a YouTube video to auto-track.</p>
+    <p class="status-title" id="statusTitle"></p>
+    <p class="status-session" id="statusSession"></p>
+    <div class="status-actions" id="statusActions" hidden></div>
+  </section>
+
+  <!-- Language pills for stats -->
+  <div class="lang-pills">
+    <button class="pill active" data-statslang="fr">🇫🇷 <span data-i18n="french">Français</span></button>
+    <button class="pill" data-statslang="en">🇬🇧 <span data-i18n="english">English</span></button>
+  </div>
+
+  <!-- Quick stats -->
+  <section class="quick-stats">
+    <div class="qs">
+      <span class="qs-label" data-i18n="today">Today</span>
+      <span class="qs-value" id="qsToday">–</span>
+    </div>
+    <div class="qs">
+      <span class="qs-label" data-i18n="thisWeek">This Week</span>
+      <span class="qs-value" id="qsWeek">–</span>
+    </div>
+    <div class="qs">
+      <span class="qs-label" data-i18n="thisMonth">This Month</span>
+      <span class="qs-value" id="qsMonth">–</span>
+    </div>
+  </section>
+  <div class="goal-bar"><div class="goal-fill" id="goalFill"></div></div>
+  <p class="goal-text" id="goalText"></p>
+  <p class="error-text" id="errorText" hidden></p>
+  <p class="pending-text" id="pendingText" hidden></p>
+
+  <!-- Manual entry -->
+  <form id="manualForm" class="manual">
+    <div class="row">
+      <input type="date" id="mDate" required>
+      <input type="number" id="mMinutes" min="1" max="1440" data-i18n-ph="minutes" placeholder="Minutes" required>
+    </div>
+    <div class="row">
+      <select id="mLang">
+        <option value="fr">🇫🇷 Français</option>
+        <option value="en">🇬🇧 English</option>
+      </select>
+      <select id="mType">
+        <option value="podcast">🎙️ Podcast</option>
+        <option value="youtube">▶️ YouTube</option>
+              <option value="reading">📖 Reading</option>
+      </select>
+      <input type="text" id="mTitle" class="grow" data-i18n-ph="titleOptional" placeholder="Title (optional)">
+    </div>
+    <button type="submit" class="mini-btn primary full" data-i18n="addSession">+ Add Session</button>
+  </form>
+
+  <button id="dashboardBtn" class="dash-btn" data-i18n="openDashboard">Open Dashboard ↗</button>
+
+  <script src="config.js"></script>
+  <script src="supabase.js"></script>
+  <script src="i18n.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

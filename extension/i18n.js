@@ -1,0 +1,148 @@
+// UI strings. English by default; the UI switches to French when the
+// Français language filter/pill is selected (immersion!). No manual toggle.
+
+const I18N = {
+  en: {
+    tagline: 'French & English Listening Tracker',
+    export: 'Export CSV',
+    today: 'Today',
+    thisWeek: 'This Week',
+    thisMonth: 'This Month',
+    streak: 'Day Streak',
+    manualEntry: 'Manual Entry',
+    addSession: '+ Add Session',
+    dailyGoals: 'Daily goals (min)',
+    dashboard: 'Dashboard',
+    daily: 'Daily',
+    weekly: 'Weekly',
+    monthly: 'Monthly',
+    bySource: 'By Source',
+    recentSessions: 'Recent Sessions (last 7 days)',
+    noSessions: 'No sessions yet — play a French or English YouTube video, or add one manually. Bonne écoute ! 🎧',
+    whatListening: 'What are you listening to? (optional)',
+    minutes: 'Minutes',
+    titleOptional: 'Title (optional)',
+    goalOf: 'of',
+    goalUnit: 'min goal',
+    goalDone: 'Goal reached! 🎉',
+    avgPerDay: 'avg/day',
+    totalAllTime: 'total all time',
+    minutesLabel: 'Minutes',
+    last14: 'Last 14 days',
+    last12w: 'Last 12 weeks',
+    last12m: 'Last 12 months',
+    confirmDelete: 'Delete this session?',
+    untitled: '(untitled)',
+    weekPrefix: 'Wk of ',
+    all: 'All',
+    french: 'Français',
+    english: 'English',
+    save: 'Save',
+    cancel: 'Cancel',
+    sessionsUnit: 'sessions',
+    goalMet: 'Goal met',
+    underGoal: 'Under goal',
+    readingLbl: 'Reading',
+    // popup-specific
+    notYouTube: 'Open a YouTube video to auto-track.',
+    detectedFr: '🇫🇷 Detected as French — tracking',
+    detectedEn: '🇬🇧 Detected as English — tracking',
+    trackedByChannelFr: '🇫🇷 Tracked (channel in your list)',
+    trackedByChannelEn: '🇬🇧 Tracked (channel in your list)',
+    trackedByOverrideFr: '🇫🇷 Tracked (manual override)',
+    trackedByOverrideEn: '🇬🇧 Tracked (manual override)',
+    notDetected: 'Language not detected',
+    excluded: 'Excluded (manual override)',
+    trackAsFr: 'Track as 🇫🇷',
+    trackAsEn: 'Track as 🇬🇧',
+    dontTrackThis: "Don't track",
+    alwaysChannel: 'Always track this channel',
+    stopChannel: 'Stop always-tracking this channel',
+    openDashboard: 'Open Dashboard ↗',
+    thisSession: 'this session',
+    pendingSync: 'session(s) waiting to sync',
+    loadError: 'Could not load stats — check your connection.',
+    added: 'Added ✓',
+  },
+  fr: {
+    tagline: "Suivi d'écoute français & anglais",
+    export: 'Exporter CSV',
+    today: "Aujourd'hui",
+    thisWeek: 'Cette semaine',
+    thisMonth: 'Ce mois-ci',
+    streak: 'Série (jours)',
+    manualEntry: 'Saisie manuelle',
+    addSession: '+ Ajouter une session',
+    dailyGoals: 'Objectifs quotidiens (min)',
+    dashboard: 'Tableau de bord',
+    daily: 'Quotidien',
+    weekly: 'Hebdo',
+    monthly: 'Mensuel',
+    bySource: 'Par source',
+    recentSessions: 'Sessions récentes (7 derniers jours)',
+    noSessions: "Aucune session — lancez une vidéo YouTube en français ou en anglais, ou ajoutez-en une manuellement. Bonne écoute ! 🎧",
+    whatListening: "Qu'écoutez-vous ? (facultatif)",
+    minutes: 'Minutes',
+    titleOptional: 'Titre (facultatif)',
+    goalOf: 'sur',
+    goalUnit: 'min (objectif)',
+    goalDone: 'Objectif atteint ! 🎉',
+    avgPerDay: 'moy./jour',
+    totalAllTime: 'au total',
+    minutesLabel: 'Minutes',
+    last14: '14 derniers jours',
+    last12w: '12 dernières semaines',
+    last12m: '12 derniers mois',
+    confirmDelete: 'Supprimer cette session ?',
+    untitled: '(sans titre)',
+    weekPrefix: 'Sem. du ',
+    all: 'Tout',
+    french: 'Français',
+    english: 'Anglais',
+    save: 'Enregistrer',
+    cancel: 'Annuler',
+    sessionsUnit: 'sessions',
+    goalMet: 'Objectif atteint',
+    underGoal: "Sous l'objectif",
+    readingLbl: 'Lecture',
+    // popup-specific
+    notYouTube: 'Ouvrez une vidéo YouTube pour le suivi automatique.',
+    detectedFr: '🇫🇷 Détecté comme français — suivi en cours',
+    detectedEn: '🇬🇧 Détecté comme anglais — suivi en cours',
+    trackedByChannelFr: '🇫🇷 Suivi (chaîne dans votre liste)',
+    trackedByChannelEn: '🇬🇧 Suivi (chaîne dans votre liste)',
+    trackedByOverrideFr: '🇫🇷 Suivi (choix manuel)',
+    trackedByOverrideEn: '🇬🇧 Suivi (choix manuel)',
+    notDetected: 'Langue non détectée',
+    excluded: 'Exclu (choix manuel)',
+    trackAsFr: 'Suivre en 🇫🇷',
+    trackAsEn: 'Suivre en 🇬🇧',
+    dontTrackThis: 'Ne pas suivre',
+    alwaysChannel: 'Toujours suivre cette chaîne',
+    stopChannel: 'Ne plus suivre cette chaîne',
+    openDashboard: 'Ouvrir le tableau de bord ↗',
+    thisSession: 'cette session',
+    pendingSync: 'session(s) en attente de synchronisation',
+    loadError: 'Impossible de charger les statistiques — vérifiez la connexion.',
+    added: 'Ajouté ✓',
+  },
+};
+
+let lang = 'en';
+
+// UI follows the selected language filter: Français → French UI, else English.
+function setUiLang(next) {
+  lang = next === 'fr' ? 'fr' : 'en';
+}
+
+const t = (key) => (I18N[lang] && I18N[lang][key]) ?? I18N.en[key] ?? key;
+
+function applyI18n(root = document) {
+  document.documentElement.lang = lang;
+  root.querySelectorAll('[data-i18n]').forEach((el) => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  root.querySelectorAll('[data-i18n-ph]').forEach((el) => {
+    el.placeholder = t(el.dataset.i18nPh);
+  });
+}

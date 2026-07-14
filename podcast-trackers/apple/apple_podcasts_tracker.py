@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""Écoute — Apple Podcasts time sync.
+
+Reads the macOS Podcasts app's local library (which also receives play-state
+synced from an iPhone via iCloud), diffs each episode's playhead against the
+previous run, and logs listening deltas to Supabase per show language.
+
+Runs from launchd every 15 minutes (com.ecoute.applepodcasts.plist).
+First run only records baselines; deltas start from the second run.
+"""
+
+import json
+import sqlite3
+import sys
+import time
+import urllib.request
+from datetime import datetime, timedelta
+from pathlib import Path
+
+CONFIG_PATH = Path(__file__).with_name("config.json")
+STATE_DIR = Path.home() / "Library/Application Support/ecoute"
+STATE_PATH = STATE_DIR / "apple_podcasts_state.json"
+DB_PATH = (Path.home() / "Library/Group Containers/243LU875E5.groups.com.apple.podcasts"
+           / "Documents/MTLibrary.sqlite")
+
+COREDATA_EPOCH = 978307200  # Core Data timestamps count from 2001-01-01
+ROLLOVER_HOUR = 4           # tracker day starts at 4am, like Anki
+LOOKBACK_DAYS = 3
+MIN_SECONDS = 30
+MAX_STATE_EPISODES = 1000
+
+
+def log(msg):
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}")
+
+
+def load_config():
+    with open(CONFIG_PATH) as f:
+        return json.load(f)
+
+
+def sb_insert(cfg, row):
+    req = urllib.request.Request(
+        f"{cfg['supabase_url']}/rest/v1/listening_sessions",
+        data=json.dumps(row).encode(),
+        method="POST",
+    )
+    req.add_header("apikey", cfg["supabase_key"])
+    req.add_header("Authorization", f"Bearer {cfg['supabase_key']}")
+    req.add_header("Content-Type", "application/json")
+    urllib.request.urlopen(req, timeout=15).read()
+
+
+def show_language(cfg, show_title):
+    """Prefix match against config, like the Anki deck mapping."""
+    if not show_title:
+        return None
+    lower = show_title.lower()
+    for prefix, lang in cfg.get("show_languages", {}).items():
+        if lower.startswith(prefix.lower()):
+            return lang
+    return None
+
+
+def logical_date(unix_ts):
+    return (datetime.fromtimestamp(unix_ts) - timedelta(hours=ROLLOVER_HOUR)).strftime("%Y-%m-%d")
+
+
+def recent_episodes():
+    """Episodes whose play state changed within the lookback window."""
+    since_cd = time.time() - LOOKBACK_DAYS * 86400 - COREDATA_EPOCH
+    con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    rows = con.execute(
+        """
+        select e.ZUUID, e.ZPLAYHEAD, e.ZDURATION,
+               coalesce(e.ZLASTDATEPLAYED, e.ZPLAYSTATELASTMODIFIEDDATE) + ?,
+               e.ZTITLE, p.ZTITLE
+        from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
+        where e.ZLASTDATEPLAYED > ? or e.ZPLAYSTATELASTMODIFIEDDATE > ?
+        """,
+        (COREDATA_EPOCH, since_cd, since_cd),
+    ).fetchall()
+    con.close()
+    return rows
+
+
+def main():
+    cfg = load_config()
+    first_run = not STATE_PATH.exists()
+    state = {"episodes": {}, "last_run": 0}
+    if not first_run:
+        with open(STATE_PATH) as f:
+            state = json.load(f)
+
+    now = time.time()
+    elapsed = max(60.0, min(now - state.get("last_run", now), LOOKBACK_DAYS * 86400))
+    episodes = state["episodes"]
+    seen = set()
+    inserted = 0
+
+    for uuid, playhead, duration, played_ts, ep_title, show_title in recent_episodes():
+        seen.add(uuid)
+        playhead = playhead or 0
+
+        if first_run:
+            episodes[uuid] = playhead
+            continue
+
+        delta = playhead - episodes.get(uuid, 0)
+        if delta <= 0:  # rewind or no progress — just re-baseline
+            episodes[uuid] = playhead
+            continue
+
+        lang = show_language(cfg, show_title)
+        if lang is None:  # unmapped show (e.g. Chinese) — skip but re-baseline
+            episodes[uuid] = playhead
+            continue
+
+        capped = min(delta, elapsed * 2, duration or delta)
+        if capped < MIN_SECONDS:
+            continue  # leave baseline in place so it accumulates for next run
+
+        row = {
+            "date": logical_date(played_ts or now),
+            "seconds": int(capped),
+            "language": lang,
+            "type": "podcast",
+            "title": ep_title or "",
+            "channel": show_title or "",
+            "source": "apple",
+        }
+        try:
+            sb_insert(cfg, row)
+            episodes[uuid] = playhead  # only advance the baseline once saved
+            inserted += 1
+            log(f"logged {int(capped)}s [{lang}] {show_title} — {ep_title}")
+        except Exception as e:
+            log(f"insert failed (will retry next run): {e}")
+
+    # Prune stale episodes so the state file stays small.
+    if len(episodes) > MAX_STATE_EPISODES:
+        for key in [k for k in episodes if k not in seen][: len(episodes) - MAX_STATE_EPISODES]:
+            del episodes[key]
+
+    state["last_run"] = now
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    with open(STATE_PATH, "w") as f:
+        json.dump(state, f)
+
+    log("baselines recorded (first run)" if first_run else f"done — {inserted} row(s) inserted")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        log(f"fatal: {e}")
+        sys.exit(1)

@@ -1,0 +1,13 @@
+# Écoute Spotify poller — background worker, no HTTP service.
+app = "ecoute-spotify"
+primary_region = "nrt"
+
+[build]
+
+[env]
+  TZ_NAME = "Asia/Taipei"
+  POLL_SECONDS = "30"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

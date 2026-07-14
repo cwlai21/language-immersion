@@ -1,0 +1,62 @@
+// Runs in the page's MAIN world so it can read YouTube's player response.
+// Extracts video metadata + language signals and hands them to content.js
+// via a CustomEvent (detail is JSON — objects don't cross world boundaries).
+(() => {
+  function getPlayerResponse() {
+    const player = document.getElementById('movie_player');
+    try {
+      if (player && typeof player.getPlayerResponse === 'function') {
+        return player.getPlayerResponse();
+      }
+    } catch { /* player not ready */ }
+    return window.ytInitialPlayerResponse || null;
+  }
+
+  let attempts = 0;
+  let timer = null;
+
+  function probe() {
+    const urlVideoId = new URLSearchParams(location.search).get('v');
+    if (!urlVideoId || !location.pathname.startsWith('/watch')) return;
+
+    const pr = getPlayerResponse();
+    const details = pr && pr.videoDetails;
+    // Player response can lag behind SPA navigation — retry until it matches the URL.
+    if (!details || details.videoId !== urlVideoId) {
+      if (++attempts < 10) timer = setTimeout(probe, 1000);
+      return;
+    }
+
+    const tracks =
+      (pr.captions &&
+        pr.captions.playerCaptionsTracklistRenderer &&
+        pr.captions.playerCaptionsTracklistRenderer.captionTracks) || [];
+    // ASR (auto-generated) captions are always in the spoken language —
+    // the strongest signal for what language the audio actually is.
+    const asr = tracks.find((t) => t.kind === 'asr');
+
+    const info = {
+      videoId: details.videoId,
+      title: details.title || '',
+      channel: details.author || '',
+      channelId: details.channelId || '',
+      asrLang: asr ? asr.languageCode : null,
+      captionLangs: tracks.filter((t) => t.kind !== 'asr').map((t) => t.languageCode),
+    };
+    window.dispatchEvent(new CustomEvent('ecoute-videoinfo', { detail: JSON.stringify(info) }));
+
+    // The caption list can load after the rest of the player response.
+    // Keep probing and re-announce when it shows up, so a late ASR track
+    // still flips the video to tracked.
+    if (!tracks.length && ++attempts < 12) timer = setTimeout(probe, 1000);
+  }
+
+  function schedule() {
+    clearTimeout(timer);
+    attempts = 0;
+    timer = setTimeout(probe, 800);
+  }
+
+  window.addEventListener('yt-navigate-finish', schedule);
+  schedule();
+})();

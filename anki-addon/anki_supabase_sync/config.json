@@ -1,0 +1,9 @@
+{
+  "supabase_url": "https://iusnuavugqjdaljgdcij.supabase.co",
+  "supabase_key": "sb_publishable_Kk9TZYacJFYirPPjhnIeDg_FAEhOXeO",
+  "deck_languages": {
+    "Français": "fr"
+  },
+  "sync_interval_minutes": 10,
+  "days_back": 3
+}
