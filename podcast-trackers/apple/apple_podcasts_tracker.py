@@ -10,6 +10,7 @@ First run only records baselines; deltas start from the second run.
 """
 
 import json
+import re
 import sqlite3
 import sys
 import time
@@ -62,6 +63,30 @@ def show_language(cfg, show_title):
     return None
 
 
+def feed_language(state, show_title, feed_url):
+    """Auto-detect a show's language from its RSS feed's <language> tag.
+    Result is cached in the state file; config mappings take precedence.
+    Returns 'fr'/'en', or None for other languages ('skip' cached)."""
+    shows = state.setdefault("shows", {})
+    if show_title in shows:
+        cached = shows[show_title]
+        return cached if cached in ("fr", "en") else None
+    if not feed_url:
+        return None
+    try:
+        req = urllib.request.Request(feed_url, headers={"User-Agent": "Mozilla/5.0"})
+        xml = urllib.request.urlopen(req, timeout=15).read(200000).decode("utf-8", "ignore")
+        m = re.search(r"<language>\s*([A-Za-z-]+)\s*</language>", xml)
+        code = (m.group(1).lower()[:2] if m else "")
+        lang = code if code in ("fr", "en") else "skip"
+        shows[show_title] = lang
+        log(f"feed language for “{show_title}”: {m.group(1) if m else 'none'} → {lang}")
+        return lang if lang in ("fr", "en") else None
+    except Exception as e:
+        log(f"feed check failed for “{show_title}” (will retry): {e}")
+        return None  # not cached — retried next run
+
+
 def logical_date(unix_ts):
     return (datetime.fromtimestamp(unix_ts) - timedelta(hours=ROLLOVER_HOUR)).strftime("%Y-%m-%d")
 
@@ -74,7 +99,7 @@ def recent_episodes():
         """
         select e.ZUUID, e.ZPLAYHEAD, e.ZDURATION,
                coalesce(e.ZLASTDATEPLAYED, e.ZPLAYSTATELASTMODIFIEDDATE) + ?,
-               e.ZTITLE, p.ZTITLE
+               e.ZTITLE, p.ZTITLE, coalesce(p.ZUPDATEDFEEDURL, p.ZFEEDURL)
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where e.ZLASTDATEPLAYED > ? or e.ZPLAYSTATELASTMODIFIEDDATE > ?
         """,
@@ -98,7 +123,7 @@ def main():
     seen = set()
     inserted = 0
 
-    for uuid, playhead, duration, played_ts, ep_title, show_title in recent_episodes():
+    for uuid, playhead, duration, played_ts, ep_title, show_title, feed_url in recent_episodes():
         seen.add(uuid)
         playhead = playhead or 0
 
@@ -111,8 +136,8 @@ def main():
             episodes[uuid] = playhead
             continue
 
-        lang = show_language(cfg, show_title)
-        if lang is None:  # unmapped show (e.g. Chinese) — skip but re-baseline
+        lang = show_language(cfg, show_title) or feed_language(state, show_title, feed_url)
+        if lang is None:  # non-fr/en show (e.g. Chinese) — skip but re-baseline
             episodes[uuid] = playhead
             continue
 
