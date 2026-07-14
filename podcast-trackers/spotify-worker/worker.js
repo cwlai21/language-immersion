@@ -69,6 +69,44 @@ export default {
     };
 
     try {
+      // One-URL flow for iPhone Shortcuts (single "Open URL" action):
+      // starts the timer (HTML confirmation) or stops it and shows the
+      // label form directly. Everything happens in Safari.
+      if (url.pathname === '/tap') {
+        const started = await env.STATE.get(key);
+        if (!started) {
+          await env.STATE.put(key, String(Date.now()), { expirationTtl: 12 * 3600 });
+          return htmlResponse(
+            `<h2>▶️ ${flag} ${type} timer started at ${clock(Date.now())}.</h2>
+             <p>Bonne lecture ! Open this again to stop.</p>`
+          );
+        }
+        await env.STATE.delete(key);
+        let seconds = Math.round((Date.now() - Number(started)) / 1000);
+        if (seconds < 60) {
+          return htmlResponse('<h2>⏹ Under a minute — nothing logged.</h2>');
+        }
+        seconds = Math.min(seconds, 6 * 3600);
+        const minutes = Math.round(seconds / 60);
+        const row = await insertRow(env, { seconds, lang, type, title: '', source: 'timer' });
+        if (row && row.id) {
+          await env.STATE.put(
+            `last:${type}:${lang}`,
+            JSON.stringify({ id: row.id, minutes }),
+            { expirationTtl: 3600 }
+          );
+        }
+        const action = `/title?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}`;
+        return htmlResponse(`
+          <h2>✅ ${minutes} min of ${flag} ${type} (${clock(started)}–${clock(Date.now())}).<br>What did you study?</h2>
+          <form method="post" action="${action}">
+            <input type="hidden" name="ui" value="1">
+            <input name="title" autofocus autocomplete="off" placeholder="e.g. Le Petit Prince, ch. 3">
+            <button type="submit">Save 📝</button>
+          </form>
+          <p><small>Session is already saved — the title is optional.</small></p>`);
+      }
+
       if (url.pathname === '/start') {
         const started = await env.STATE.get(key);
         if (started) {
