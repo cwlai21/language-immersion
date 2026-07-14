@@ -101,11 +101,7 @@ export default {
         const action = `/title?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}`;
         return htmlResponse(`
           <h2>✅ ${minutes} min of ${flag} ${type} (${clock(started)}–${clock(Date.now())}).<br>What did you study?</h2>
-          <form method="post" action="${action}">
-            <input type="hidden" name="ui" value="1">
-            <input name="title" autofocus autocomplete="off" placeholder="e.g. Le Petit Prince, ch. 3">
-            <button type="submit">Save 📝</button>
-          </form>
+          ${labelForm(action)}
           <p><small>Session is already saved — the title is optional.</small></p>`);
       }
 
@@ -155,12 +151,7 @@ export default {
         const action = `/title?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}`;
         return htmlResponse(`
           <h2>${heading}</h2>
-          ${last ? `
-          <form method="post" action="${action}">
-            <input type="hidden" name="ui" value="1">
-            <input name="title" autofocus autocomplete="off" placeholder="e.g. Le Petit Prince, ch. 3">
-            <button type="submit">Save 📝</button>
-          </form>` : ''}`);
+          ${last ? labelForm(action) : ''}`);
       }
 
       // Attach a title to the most recently stopped timer session.
@@ -208,6 +199,34 @@ export default {
     return new Response('routes: /start /stop /status /toggle /log?minutes=N (params: lang=fr|en, type, title)', { status: 404 });
   },
 };
+
+// Form that submits via fetch so the tab never navigates — a tab opened from
+// Shortcuts may self-close only while it has no navigation history.
+function labelForm(action) {
+  return `
+    <form id="labelform">
+      <input name="title" autofocus autocomplete="off" placeholder="e.g. Le Petit Prince, ch. 3">
+      <button type="submit">Save 📝</button>
+    </form>
+    <script>
+      document.getElementById('labelform').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector('button');
+        btn.disabled = true;
+        btn.textContent = 'Saving…';
+        try {
+          const fd = new FormData(e.target);
+          const res = await fetch('${action}', { method: 'POST', body: fd });
+          if (!res.ok) throw new Error(res.status);
+          document.body.innerHTML = '<h2>📝 Saved !</h2>';
+          setTimeout(() => { window.open('', '_self'); window.close(); }, 800);
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = 'Save 📝 (retry)';
+        }
+      });
+    </script>`;
+}
 
 function htmlResponse(body, { closeAfterMs } = {}) {
   // window.close() works in iOS Safari for tabs opened from another app
