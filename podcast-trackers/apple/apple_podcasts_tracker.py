@@ -100,7 +100,8 @@ def recent_episodes():
         """
         select e.ZUUID, e.ZPLAYHEAD, e.ZDURATION,
                coalesce(e.ZLASTDATEPLAYED, e.ZPLAYSTATELASTMODIFIEDDATE) + ?,
-               e.ZTITLE, p.ZTITLE, coalesce(p.ZUPDATEDFEEDURL, p.ZFEEDURL)
+               e.ZTITLE, p.ZTITLE, coalesce(p.ZUPDATEDFEEDURL, p.ZFEEDURL),
+               e.ZPLAYSTATE
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where e.ZLASTDATEPLAYED > ? or e.ZPLAYSTATELASTMODIFIEDDATE > ?
         """,
@@ -135,7 +136,9 @@ def main():
     seen = set()
     inserted = 0
 
-    for uuid, playhead, duration, played_ts, ep_title, show_title, feed_url in recent_episodes():
+    PLAYSTATE_PLAYED = 2  # Apple resets ZPLAYHEAD to 0 when an episode completes
+
+    for uuid, playhead, duration, played_ts, ep_title, show_title, feed_url, playstate in recent_episodes():
         seen.add(uuid)
         playhead = playhead or 0
 
@@ -145,9 +148,24 @@ def main():
 
         base = episodes.get(uuid, 0)
         delta = playhead - base
-        if delta <= 0:  # rewind or no progress — just re-baseline
-            episodes[uuid] = playhead
-            continue
+        if delta <= 0:
+            # Finished episodes reset to playhead 0 with state "played" —
+            # credit the final unlogged stretch instead of dropping it.
+            if (playhead < 60 and base > 60 and playstate == PLAYSTATE_PLAYED
+                    and duration and duration > base):
+                if duration - base < MIN_SECONDS:
+                    episodes[uuid] = playhead
+                    continue
+                delta = duration - base
+                base = duration - delta  # keep the arithmetic below consistent
+            elif playhead == 0 and playstate != PLAYSTATE_PLAYED and base > 60:
+                # Zero-reset without a 'played' mark: iCloud sync artifacts do
+                # this transiently. Keep the old baseline so the true position,
+                # when it syncs, doesn't get double-counted.
+                continue
+            else:
+                episodes[uuid] = playhead  # rewind/restart — just re-baseline
+                continue
 
         lang = show_language(cfg, show_title) or feed_language(state, show_title, feed_url)
         if lang is None:  # non-fr/en show (e.g. Chinese) — skip but re-baseline

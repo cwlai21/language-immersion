@@ -311,7 +311,37 @@ const TYPE_META = {
   anki: { icon: '📇', label: 'Anki' },
 };
 
-function sessionRow(s) {
+const hm = (ms) => {
+  const d = new Date(ms);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+// Clock interval [startMs, endMs] for a row, or null when meaningless.
+// Spotify rows are created at session start (then grown); the other live
+// trackers insert at session end. Anki/import/manual have no useful clock.
+function sessionInterval(s) {
+  if (!s.created_at || !['auto', 'timer', 'apple', 'spotify'].includes(s.source)) return null;
+  const created = new Date(s.created_at).getTime();
+  return s.source === 'spotify'
+    ? [created, created + s.seconds * 1000]
+    : [created - s.seconds * 1000, created];
+}
+
+// Union overlapping/adjacent (≤2 min apart) intervals.
+function mergeIntervals(intervals) {
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const [start, end] of sorted) {
+    const last = out[out.length - 1];
+    if (last && start <= last[1] + 120000) last[1] = Math.max(last[1], end);
+    else out.push([start, end]);
+  }
+  return out;
+}
+
+// One list item for a group of rows (same content, same day; often length 1).
+function sessionRow(rows) {
+  const s = rows[0];
   const li = document.createElement('li');
   li.className = 'session-item';
 
@@ -328,45 +358,59 @@ function sessionRow(s) {
   const meta = document.createElement('div');
   meta.className = 'session-meta';
   const bits = [s.date];
-  // Start–stop clock times, derived from the row's insert timestamp:
-  // spotify rows are created at session start (then grown); the other live
-  // trackers insert at session end. Anki/import/manual have no meaningful clock.
-  if (s.created_at && ['auto', 'timer', 'apple', 'spotify'].includes(s.source)) {
-    const created = new Date(s.created_at);
-    const startMs = s.source === 'spotify' ? created.getTime() : created.getTime() - s.seconds * 1000;
-    const endMs = s.source === 'spotify' ? created.getTime() + s.seconds * 1000 : created.getTime();
-    const hm = (ms) => {
-      const d = new Date(ms);
-      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    };
-    bits.push(`${hm(startMs)}–${hm(endMs)}`);
+  const intervals = mergeIntervals(rows.map(sessionInterval).filter(Boolean));
+  if (intervals.length) {
+    bits.push(intervals.map(([a, b]) => `${hm(a)}–${hm(b)}`).join(', '));
   }
   if (s.channel) bits.push(s.channel);
-  if (['auto', 'anki', 'apple', 'spotify'].includes(s.source)) bits.push('🤖 auto');
-  if (s.source === 'import') bits.push('📥 est.');
+  if (rows.some((r) => ['auto', 'anki', 'apple', 'spotify'].includes(r.source))) bits.push('🤖 auto');
+  if (rows.some((r) => r.source === 'import')) bits.push('📥 est.');
   meta.textContent = bits.join(' · ');
   info.append(title, meta);
 
+  const totalSeconds = rows.reduce((sum, r) => sum + r.seconds, 0);
   const mins = document.createElement('span');
   mins.className = 'session-mins';
-  mins.textContent = fmtMinutes(s.seconds / 60);
+  mins.textContent = fmtMinutes(totalSeconds / 60);
 
-  const edit = document.createElement('button');
-  edit.className = 'session-del';
-  edit.textContent = '✏️';
-  edit.title = 'Edit';
-  edit.onclick = () => enterEditMode(li, s);
+  if (rows.length === 1) {
+    const edit = document.createElement('button');
+    edit.className = 'session-del';
+    edit.textContent = '✏️';
+    edit.title = 'Edit';
+    edit.onclick = () => enterEditMode(li, s);
+    li.append(info, mins, edit);
+  } else {
+    li.append(info, mins);
+  }
 
   const del = document.createElement('button');
   del.className = 'session-del';
   del.textContent = '✕';
-  del.title = 'Delete';
-  del.onclick = () => {
-    if (confirm(t('confirmDelete'))) removeSession(s.id).catch(showError);
+  del.title = rows.length > 1 ? `Delete ${rows.length} sessions` : 'Delete';
+  del.onclick = async () => {
+    if (!confirm(t('confirmDelete'))) return;
+    try {
+      for (const r of rows) await sb.deleteSession(r.id);
+      await fetchSessions();
+      render();
+    } catch (e) {
+      showError(e);
+    }
   };
-
-  li.append(info, mins, edit, del);
+  li.appendChild(del);
   return li;
+}
+
+// Rows sharing a non-empty title + channel on the same day render as one item.
+function groupSameContent(sessions) {
+  const byKey = new Map();
+  for (const s of sessions) {
+    const k = s.title ? `${s.date}|${s.title}|${s.channel}` : `solo|${s.id}`;
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(s);
+  }
+  return [...byKey.values()];
 }
 
 function enterEditMode(li, s) {
@@ -448,20 +492,21 @@ function renderSessionList() {
       const group = ofLang.filter((s) => (TYPE_META[s.type] ? s.type : 'youtube') === type);
       if (!group.length) continue;
 
+      const merged = groupSameContent(group);
       const details = document.createElement('details');
       details.className = 'src-group';
-      if (group.length <= 4) details.open = true;
+      if (merged.length <= 4) details.open = true;
 
       const summary = document.createElement('summary');
       const groupTotal = group.reduce((sum, s) => sum + s.seconds, 0) / 60;
       summary.innerHTML =
         `<span>${TYPE_META[type].icon} ${type === 'reading' ? t('readingLbl') : TYPE_META[type].label}</span>` +
-        `<span class="src-sub">${group.length} ${t('sessionsUnit')} · ${fmtMinutes(groupTotal)}</span>`;
+        `<span class="src-sub">${merged.length} ${t('sessionsUnit')} · ${fmtMinutes(groupTotal)}</span>`;
       details.appendChild(summary);
 
       const ul = document.createElement('ul');
       ul.className = 'session-list';
-      for (const s of group) ul.appendChild(sessionRow(s));
+      for (const rows of merged) ul.appendChild(sessionRow(rows));
       details.appendChild(ul);
 
       const wrap = document.createElement('li');
