@@ -52,3 +52,18 @@ alter table listening_sessions enable row level security;
 drop policy if exists "anon full access" on listening_sessions;
 create policy "anon full access" on listening_sessions
   for all to anon using (true) with check (true);
+
+-- Tiny strongly-consistent key/value store for the Cloudflare worker's
+-- timer state (Workers KV is eventually consistent, which broke the
+-- "French and English can't overlap" guard).
+create table if not exists kv_state (
+  key        text primary key,
+  value      text not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table kv_state enable row level security;
+
+drop policy if exists "anon full access" on kv_state;
+create policy "anon full access" on kv_state
+  for all to anon using (true) with check (true);

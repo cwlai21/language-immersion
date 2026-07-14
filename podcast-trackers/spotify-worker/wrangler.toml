@@ -3,9 +3,8 @@ main = "worker.js"
 compatibility_date = "2026-07-01"
 workers_dev = true
 
-[[kv_namespaces]]
-binding = "STATE"
-id = "5f5a3f31f20f4cc0b5fee1383406fd9b"
+# Timer state moved to Supabase (kv_state table) — Workers KV's eventual
+# consistency broke read-after-write for the overlap guard.
 
 [triggers]
 crons = ["*/2 * * * *"]

@@ -36,6 +36,9 @@ export default {
     const title = url.searchParams.get('title') || '';
     const flag = lang === 'fr' ? '🇫🇷' : '🇬🇧';
     const key = `open:${type}:${lang}`;
+    const otherLang = lang === 'fr' ? 'en' : 'fr';
+    const otherFlag = otherLang === 'fr' ? '🇫🇷' : '🇬🇧';
+    const otherKey = `open:${type}:${otherLang}`;
 
     const clock = (ms) => {
       const d = new Date(Number(ms) + 8 * 3600 * 1000); // Asia/Taipei
@@ -43,13 +46,45 @@ export default {
     };
     const elapsedMin = (ms) => Math.round((Date.now() - Number(ms)) / 60000);
 
+    // Timer state lives in Supabase (kv_state) for strong consistency.
+    // An open timer older than 12h is treated as forgotten and discarded.
+    const getTimer = async (k) => {
+      const v = await kvGet(env, k);
+      if (!v) return null;
+      if (Date.now() - Number(v) > 12 * 3600 * 1000) {
+        await kvDel(env, k);
+        return null;
+      }
+      return v;
+    };
+
+    // Stop a running timer and log it (if ≥1 min); returns minutes logged.
+    const finishAndLog = async (kKey, kLang, startedMs) => {
+      await kvDel(env, kKey);
+      let seconds = Math.round((Date.now() - Number(startedMs)) / 1000);
+      if (seconds < 60) return 0;
+      seconds = Math.min(seconds, 6 * 3600);
+      const minutes = Math.round(seconds / 60);
+      const row = await insertRow(env, { seconds, lang: kLang, type, title: '', source: 'timer' });
+      if (row && row.id) {
+        await kvPut(env, `last:${type}:${kLang}`, JSON.stringify({ id: row.id, minutes }));
+      }
+      return minutes;
+    };
+
     const startTimer = async () => {
-      await env.STATE.put(key, String(Date.now()), { expirationTtl: 12 * 3600 });
+      const otherStarted = await getTimer(otherKey);
+      if (otherStarted) {
+        return new Response(
+          `⚠️ ${otherFlag} ${type} is already running — since ${clock(otherStarted)} (${elapsedMin(otherStarted)}m). Stop it first.`
+        );
+      }
+      await kvPut(env, key, String(Date.now()));
       return new Response(`▶️ ${flag} ${type} timer started at ${clock(Date.now())}.`);
     };
 
     const stopTimer = async (started) => {
-      await env.STATE.delete(key);
+      await kvDel(env, key);
       let seconds = Math.round((Date.now() - Number(started)) / 1000);
       if (seconds < 60) return new Response('⏹ Under a minute — nothing logged.');
       seconds = Math.min(seconds, 6 * 3600);
@@ -57,11 +92,7 @@ export default {
       const row = await insertRow(env, { seconds, lang, type, title, source: 'timer' });
       if (row && row.id) {
         // Remember the row so /title can label it right after.
-        await env.STATE.put(
-          `last:${type}:${lang}`,
-          JSON.stringify({ id: row.id, minutes }),
-          { expirationTtl: 3600 }
-        );
+        await kvPut(env, `last:${type}:${lang}`, JSON.stringify({ id: row.id, minutes }));
       }
       return new Response(
         `✅ ${minutes}m of ${flag} ${type} (${clock(started)}–${clock(Date.now())}). What did you study?`
@@ -73,9 +104,37 @@ export default {
       // starts the timer (HTML confirmation) or stops it and shows the
       // label form directly. Everything happens in Safari.
       if (url.pathname === '/tap') {
-        const started = await env.STATE.get(key);
+        const started = await getTimer(key);
         if (!started) {
-          await env.STATE.put(key, String(Date.now()), { expirationTtl: 12 * 3600 });
+          // Guard: French and English timers must not overlap.
+          const otherStarted = await getTimer(otherKey);
+          if (otherStarted) {
+            if (url.searchParams.get('switch') === '1') {
+              const loggedMin = await finishAndLog(otherKey, otherLang, otherStarted);
+              await kvPut(env, key, String(Date.now()));
+              const msg =
+                (loggedMin ? `⏹ Logged ${loggedMin}m of ${otherFlag} ${type}. ` : `⏹ ${otherFlag} discarded (under a minute). `) +
+                `▶️ ${flag} ${type} started at ${clock(Date.now())}.`;
+              if (url.searchParams.get('ajax') === '1') return new Response(msg);
+              return htmlResponse(`<h2>${msg}</h2>`, { closeAfterMs: 3000 });
+            }
+            const switchUrl =
+              `/tap?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}&switch=1&ajax=1`;
+            return htmlResponse(`
+              <h2>⚠️ ${otherFlag} ${type} is already running<br>— since ${clock(otherStarted)} (${elapsedMin(otherStarted)}m).</h2>
+              <p>French and English can't overlap.</p>
+              <button id="sw">Stop ${otherFlag} & start ${flag}</button>
+              <button id="cx" class="secondary">Cancel</button>
+              <script>
+                document.getElementById('sw').onclick = async () => {
+                  const r = await fetch('${switchUrl}');
+                  document.body.innerHTML = '<h2>' + await r.text() + '</h2>';
+                  setTimeout(() => { window.open('', '_self'); window.close(); }, 2500);
+                };
+                document.getElementById('cx').onclick = () => { window.open('', '_self'); window.close(); };
+              </script>`);
+          }
+          await kvPut(env, key, String(Date.now()));
           return htmlResponse(
             `<h2>▶️ ${flag} ${type} timer started at ${clock(Date.now())}.</h2>
              <p>Bonne lecture ! Open this again to stop.</p>
@@ -83,7 +142,7 @@ export default {
             { closeAfterMs: 3000 }
           );
         }
-        await env.STATE.delete(key);
+        await kvDel(env, key);
         let seconds = Math.round((Date.now() - Number(started)) / 1000);
         if (seconds < 60) {
           return htmlResponse('<h2>⏹ Under a minute — nothing logged.</h2>', { closeAfterMs: 5000 });
@@ -92,11 +151,7 @@ export default {
         const minutes = Math.round(seconds / 60);
         const row = await insertRow(env, { seconds, lang, type, title: '', source: 'timer' });
         if (row && row.id) {
-          await env.STATE.put(
-            `last:${type}:${lang}`,
-            JSON.stringify({ id: row.id, minutes }),
-            { expirationTtl: 3600 }
-          );
+          await kvPut(env, `last:${type}:${lang}`, JSON.stringify({ id: row.id, minutes }));
         }
         const action = `/title?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}`;
         return htmlResponse(`
@@ -106,7 +161,7 @@ export default {
       }
 
       if (url.pathname === '/start') {
-        const started = await env.STATE.get(key);
+        const started = await getTimer(key);
         if (started) {
           return new Response(
             `⏱ Already running — ${flag} ${type} since ${clock(started)} (${elapsedMin(started)}m). Use Stop to log it.`
@@ -116,34 +171,31 @@ export default {
       }
 
       if (url.pathname === '/stop') {
-        const started = await env.STATE.get(key);
+        const started = await getTimer(key);
         if (!started) return new Response(`🤷 No ${flag} ${type} timer running.`);
         return stopTimer(started);
       }
 
       if (url.pathname === '/status') {
-        const { keys } = await env.STATE.list({ prefix: 'open:' });
-        if (!keys.length) return new Response('🤷 No timers running.');
-        const lines = [];
-        for (const k of keys) {
-          const startedAt = await env.STATE.get(k.name);
-          const [, kType, kLang] = k.name.split(':');
-          lines.push(
-            `⏱ ${kLang === 'fr' ? '🇫🇷' : '🇬🇧'} ${kType} — running since ${clock(startedAt)} (${elapsedMin(startedAt)}m)`
-          );
-        }
+        const rows = await sb(env, 'kv_state?key=like.open:*&select=key,value');
+        const fresh = (rows || []).filter((r) => Date.now() - Number(r.value) < 12 * 3600 * 1000);
+        if (!fresh.length) return new Response('🤷 No timers running.');
+        const lines = fresh.map((r) => {
+          const [, kType, kLang] = r.key.split(':');
+          return `⏱ ${kLang === 'fr' ? '🇫🇷' : '🇬🇧'} ${kType} — running since ${clock(r.value)} (${elapsedMin(r.value)}m)`;
+        });
         return new Response(lines.join('\n'));
       }
 
       if (url.pathname === '/toggle') {
-        const started = await env.STATE.get(key);
+        const started = await getTimer(key);
         return started ? stopTimer(started) : startTimer();
       }
 
       // Mobile-friendly HTML form to label the most recent timer session —
       // typing in Safari is reliable, unlike Shortcuts' compact input dialog.
       if (url.pathname === '/label') {
-        const lastRaw = await env.STATE.get(`last:${type}:${lang}`);
+        const lastRaw = await kvGet(env, `last:${type}:${lang}`);
         const last = lastRaw ? JSON.parse(lastRaw) : null;
         const heading = last
           ? `✅ ${last.minutes} min of ${flag} ${type} — what did you study?`
@@ -168,7 +220,7 @@ export default {
         }
         text = text.trim();
         if (!text) return new Response('need a title (?title= or POST form field "title")', { status: 400 });
-        const lastRaw = await env.STATE.get(`last:${type}:${lang}`);
+        const lastRaw = await kvGet(env, `last:${type}:${lang}`);
         if (!lastRaw) {
           return fromForm
             ? htmlResponse('<h2>🤷 No recent session to label.</h2>')
@@ -199,6 +251,24 @@ export default {
     return new Response('routes: /start /stop /status /toggle /log?minutes=N (params: lang=fr|en, type, title)', { status: 404 });
   },
 };
+
+// Strongly-consistent key/value state in Supabase (kv_state table).
+async function kvGet(env, key) {
+  const rows = await sb(env, `kv_state?key=eq.${encodeURIComponent(key)}&select=value`);
+  return rows && rows.length ? rows[0].value : null;
+}
+
+async function kvPut(env, key, value) {
+  await sb(env, 'kv_state?on_conflict=key', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify({ key, value, updated_at: new Date().toISOString() }),
+  });
+}
+
+async function kvDel(env, key) {
+  await sb(env, `kv_state?key=eq.${encodeURIComponent(key)}`, { method: 'DELETE' });
+}
 
 // Form that submits via fetch so the tab never navigates — a tab opened from
 // Shortcuts may self-close only while it has no navigation history.
@@ -245,7 +315,9 @@ function htmlResponse(body, { closeAfterMs } = {}) {
        input[name=title] { width: 100%; box-sizing: border-box; font-size: 18px;
               padding: 14px; border: 1px solid #cdd3e1; border-radius: 12px; margin: 14px 0; }
        button { width: 100%; font-size: 18px; font-weight: 600; padding: 14px;
-              border: none; border-radius: 12px; background: #2b4fd8; color: #fff; }
+              border: none; border-radius: 12px; background: #2b4fd8; color: #fff;
+              margin-top: 10px; }
+       button.secondary { background: #e5e8f0; color: #1a2033; }
      </style></head><body>${body}</body></html>`,
     { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
   );
