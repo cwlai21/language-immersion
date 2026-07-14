@@ -104,27 +104,52 @@ export default {
         return started ? stopTimer(started) : startTimer();
       }
 
+      // Mobile-friendly HTML form to label the most recent timer session —
+      // typing in Safari is reliable, unlike Shortcuts' compact input dialog.
+      if (url.pathname === '/label') {
+        const lastRaw = await env.STATE.get(`last:${type}:${lang}`);
+        const last = lastRaw ? JSON.parse(lastRaw) : null;
+        const heading = last
+          ? `✅ ${last.minutes} min of ${flag} ${type} — what did you study?`
+          : `🤷 No recent ${flag} ${type} session to label.`;
+        const action = `/title?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}`;
+        return htmlResponse(`
+          <h2>${heading}</h2>
+          ${last ? `
+          <form method="post" action="${action}">
+            <input type="hidden" name="ui" value="1">
+            <input name="title" autofocus autocomplete="off" placeholder="e.g. Le Petit Prince, ch. 3">
+            <button type="submit">Save 📝</button>
+          </form>` : ''}`);
+      }
+
       // Attach a title to the most recently stopped timer session.
-      // Title comes from ?title= or a POSTed form field (Shortcuts-friendly:
-      // form encoding handles spaces/accents without manual URL-encoding).
+      // Title comes from ?title= or a POSTed form field.
       if (url.pathname === '/title') {
         let text = url.searchParams.get('title') || '';
-        if (!text && request.method === 'POST') {
+        let fromForm = false;
+        if (request.method === 'POST') {
           try {
             const fd = await request.formData();
-            text = (fd.get('title') || '').toString();
+            if (!text) text = (fd.get('title') || '').toString();
+            fromForm = fd.get('ui') === '1';
           } catch { /* no form body */ }
         }
         text = text.trim();
         if (!text) return new Response('need a title (?title= or POST form field "title")', { status: 400 });
         const lastRaw = await env.STATE.get(`last:${type}:${lang}`);
-        if (!lastRaw) return new Response('🤷 No recent session to label.');
+        if (!lastRaw) {
+          return fromForm
+            ? htmlResponse('<h2>🤷 No recent session to label.</h2>')
+            : new Response('🤷 No recent session to label.');
+        }
         const last = JSON.parse(lastRaw);
         await sb(env, `listening_sessions?id=eq.${last.id}`, {
           method: 'PATCH',
           body: JSON.stringify({ title: text }),
         });
-        return new Response(`📝 Saved — ${last.minutes}m of ${flag} ${type}: “${text}”`);
+        const msg = `📝 Saved — ${last.minutes}m of ${flag} ${type}: “${text}”`;
+        return fromForm ? htmlResponse(`<h2>${msg}</h2><p>You can close this tab.</p>`) : new Response(msg);
       }
 
       if (url.pathname === '/log') {
@@ -141,6 +166,24 @@ export default {
     return new Response('routes: /start /stop /status /toggle /log?minutes=N (params: lang=fr|en, type, title)', { status: 404 });
   },
 };
+
+function htmlResponse(body) {
+  return new Response(
+    `<!DOCTYPE html><html><head><meta charset="utf-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1">
+     <title>Écoute</title>
+     <style>
+       body { font-family: -apple-system, sans-serif; margin: 0; padding: 28px 20px;
+              background: #f4f6fb; color: #1a2033; }
+       h2 { font-size: 20px; line-height: 1.4; }
+       input[name=title] { width: 100%; box-sizing: border-box; font-size: 18px;
+              padding: 14px; border: 1px solid #cdd3e1; border-radius: 12px; margin: 14px 0; }
+       button { width: 100%; font-size: 18px; font-weight: 600; padding: 14px;
+              border: none; border-radius: 12px; background: #2b4fd8; color: #fff; }
+     </style></head><body>${body}</body></html>`,
+    { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+  );
+}
 
 async function insertRow(env, { seconds, lang, type, title, source }) {
   const rows = await sb(env, 'listening_sessions', {
