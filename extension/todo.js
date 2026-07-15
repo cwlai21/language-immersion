@@ -119,6 +119,26 @@ const SECTIONS = [
     ],
   },
   {
+    title: '💎 Maisons de luxe — l’histoire',
+    blurb: 'Hermès, Chanel, LVMH… Les maisons racontent elles-mêmes leur histoire — et Lyon (la soie !) en fait partie.',
+    items: [
+      { id: 'luxe-loudana', lang: 'fr', kind: '🎙️', title: 'Podcast du Luxe (Lou Dana)',
+        desc: 'Décryptage des grandes maisons, épisode par épisode.', url: 'https://podcasts.apple.com/fr/podcast/podcast-du-luxe-par-lou-dana/id1763830244' },
+      { id: 'luxe-hermes', lang: 'fr', kind: '🎙️', title: 'Le Monde d’Hermès — podcast officiel',
+        desc: 'La maison raconte ses artisans et son histoire, production superbe.', url: 'https://open.spotify.com/search/le%20monde%20d%27herm%C3%A8s' },
+      { id: 'luxe-chanel', lang: 'fr', kind: '🎙️', title: 'Chanel « 3.55 » — podcast officiel',
+        desc: 'Création, ateliers, histoire de Gabrielle Chanel.', url: 'https://open.spotify.com/search/chanel%203.55' },
+      { id: 'luxe-prigent', lang: 'fr', kind: '▶️', title: 'Loïc Prigent — coulisses des défilés & ateliers',
+        desc: 'LE documentariste de la mode, drôle et sous-titré — Dior, Chanel, Vuitton de l’intérieur.', url: yt('loïc prigent atelier dior chanel coulisses') },
+      { id: 'luxe-arnault', lang: 'fr', kind: '▶️', title: 'HugoDécrypte × Bernard Arnault',
+        desc: 'Le patron de LVMH interviewé par la chaîne que vous suivez déjà.', url: yt('hugodécrypte bernard arnault interview') },
+      { id: 'luxe-acquired', lang: 'en', kind: '🎙️', title: 'Acquired — « LVMH » (4h!)',
+        desc: 'Toute la saga LVMH en anglais — le récit business de référence, transcript complet sur le site.', url: 'https://www.acquired.fm/episodes/lvmh' },
+      { id: 'luxe-soie', lang: 'fr', kind: '▶️', title: 'La soie lyonnaise — des canuts aux carrés Hermès',
+        desc: 'À voir avant Lyon: la Croix-Rousse, la Maison des Canuts, et pourquoi le luxe français est né là.', url: yt('soie lyonnaise canuts histoire documentaire') },
+    ],
+  },
+  {
     title: '⛲ Genève & le Léman',
     blurb: 'La Suisse romande — même langue, autre pays.',
     items: [
