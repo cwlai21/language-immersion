@@ -41,7 +41,7 @@ async function loadStatus() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tracking = await chrome.runtime.sendMessage({ type: 'get-tracking-status' });
 
-  if (tab && tab.url && tab.url.includes('youtube.com/watch')) {
+  if (tab && tab.url && (tab.url.includes('youtube.com/watch') || tab.url.includes('youtube.com/shorts'))) {
     try {
       pageStatus = await chrome.tabs.sendMessage(tab.id, { type: 'get-page-status' });
     } catch {
