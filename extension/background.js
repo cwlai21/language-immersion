@@ -101,8 +101,10 @@ async function onHeartbeat({ video, seconds, playing }) {
 
   // Shorts are seconds long and scrolled through quickly — individual
   // sessions would all die under MIN_SESSION_SECONDS. Pool them instead.
+  // NOTE: never touch currentSession here — a paused shorts tab pings
+  // periodically and would chop an active regular session into fragments;
+  // the idle alarm already finalizes abandoned sessions.
   if (video.isShort) {
-    if (currentSession) await finalizeSession(currentSession);
     const decision = trackDecision(video, overrides, trackedChannels);
     if (decision && seconds > 0) {
       const { shortsBuffer = {} } = await chrome.storage.local.get('shortsBuffer');
