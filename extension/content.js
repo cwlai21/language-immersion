@@ -23,7 +23,7 @@ window.addEventListener('ecoute-videoinfo', (e) => {
 });
 
 window.addEventListener('yt-navigate-finish', () => {
-  if (!location.pathname.startsWith('/watch')) {
+  if (!location.pathname.startsWith('/watch') && !location.pathname.startsWith('/shorts/')) {
     flush();
     current = null;
     send({ type: 'left-video' });

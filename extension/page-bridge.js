@@ -6,21 +6,32 @@
   window.__ecouteBridgeLoaded = true;
 
   function getPlayerResponse() {
-    const player = document.getElementById('movie_player');
-    try {
-      if (player && typeof player.getPlayerResponse === 'function') {
-        return player.getPlayerResponse();
-      }
-    } catch { /* player not ready */ }
+    // Regular watch pages use #movie_player; Shorts use #shorts-player.
+    for (const id of ['movie_player', 'shorts-player']) {
+      const player = document.getElementById(id);
+      try {
+        if (player && typeof player.getPlayerResponse === 'function') {
+          const pr = player.getPlayerResponse();
+          if (pr) return pr;
+        }
+      } catch { /* player not ready */ }
+    }
     return window.ytInitialPlayerResponse || null;
+  }
+
+  function currentVideoId() {
+    const v = new URLSearchParams(location.search).get('v');
+    if (v) return v;
+    const m = location.pathname.match(/^\/shorts\/([\w-]{11})/);
+    return m ? m[1] : null;
   }
 
   let attempts = 0;
   let timer = null;
 
   function probe() {
-    const urlVideoId = new URLSearchParams(location.search).get('v');
-    if (!urlVideoId || !location.pathname.startsWith('/watch')) return;
+    const urlVideoId = currentVideoId();
+    if (!urlVideoId) return;
 
     const pr = getPlayerResponse();
     const details = pr && pr.videoDetails;
@@ -45,6 +56,7 @@
       channelId: details.channelId || '',
       asrLang: asr ? asr.languageCode : null,
       captionLangs: tracks.filter((t) => t.kind !== 'asr').map((t) => t.languageCode),
+      isShort: location.pathname.startsWith('/shorts/'),
     };
     window.dispatchEvent(new CustomEvent('ecoute-videoinfo', { detail: JSON.stringify(info) }));
 

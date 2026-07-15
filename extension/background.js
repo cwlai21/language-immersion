@@ -99,6 +99,33 @@ async function onHeartbeat({ video, seconds, playing }) {
   const { currentSession = null, overrides = {}, trackedChannels = [] } =
     await chrome.storage.local.get(['currentSession', 'overrides', 'trackedChannels']);
 
+  // Shorts are seconds long and scrolled through quickly — individual
+  // sessions would all die under MIN_SESSION_SECONDS. Pool them instead.
+  if (video.isShort) {
+    if (currentSession) await finalizeSession(currentSession);
+    const decision = trackDecision(video, overrides, trackedChannels);
+    if (decision && seconds > 0) {
+      const { shortsBuffer = {} } = await chrome.storage.local.get('shortsBuffer');
+      const day = todayKey();
+      if (shortsBuffer.date !== day) {
+        await flushShortsBuffer(shortsBuffer); // day rolled over — flush old
+        shortsBuffer.date = day;
+        shortsBuffer.fr = 0;
+        shortsBuffer.en = 0;
+      }
+      shortsBuffer[decision.lang] = (shortsBuffer[decision.lang] || 0) + seconds;
+      shortsBuffer.lastBeat = Date.now();
+      await chrome.storage.local.set({ shortsBuffer });
+    }
+    setBadge(decision && playing ? decision.lang : null);
+    return {
+      tracked: !!decision,
+      lang: decision ? decision.lang : null,
+      reason: decision ? decision.reason : null,
+      sessionSeconds: 0,
+    };
+  }
+
   let session = currentSession;
   if (session && session.videoId !== video.videoId) {
     await finalizeSession(session);
@@ -142,6 +169,35 @@ async function finalizeCurrent() {
   return { ok: true };
 }
 
+// Write the pooled shorts listening as one row per language, then reset.
+async function flushShortsBuffer(buffer) {
+  const { shortsBuffer = {} } = buffer ? { shortsBuffer: buffer } : await chrome.storage.local.get('shortsBuffer');
+  if (!shortsBuffer.date) return;
+  for (const lang of ['fr', 'en']) {
+    const seconds = shortsBuffer[lang] || 0;
+    if (seconds < MIN_SESSION_SECONDS) continue;
+    const row = {
+      date: shortsBuffer.date,
+      seconds,
+      language: lang,
+      type: 'youtube',
+      title: 'YouTube Shorts',
+      channel: 'Shorts',
+      video_id: '',
+      source: 'auto',
+    };
+    try {
+      await sb.insertSession(row);
+    } catch (e) {
+      console.warn('Supabase insert failed, queuing:', e);
+      const { pendingRows = [] } = await chrome.storage.local.get('pendingRows');
+      pendingRows.push(row);
+      await chrome.storage.local.set({ pendingRows });
+    }
+  }
+  await chrome.storage.local.set({ shortsBuffer: {} });
+}
+
 async function finalizeSession(session) {
   await chrome.storage.local.set({ currentSession: null });
   if (!session || session.seconds < MIN_SESSION_SECONDS) return;
@@ -168,12 +224,16 @@ async function finalizeSession(session) {
 /* ── Idle finalization + retry queue ─────── */
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== 'tick') return;
-  const { currentSession, pendingRows = [] } =
-    await chrome.storage.local.get(['currentSession', 'pendingRows']);
+  const { currentSession, pendingRows = [], shortsBuffer = {} } =
+    await chrome.storage.local.get(['currentSession', 'pendingRows', 'shortsBuffer']);
 
   if (currentSession && Date.now() - (currentSession.lastBeat || 0) > IDLE_FINALIZE_MS) {
     await finalizeSession(currentSession);
     setBadge(null);
+  }
+  // Shorts binge ended (no shorts heartbeat for 3+ min) — flush the pool.
+  if (shortsBuffer.date && Date.now() - (shortsBuffer.lastBeat || 0) > IDLE_FINALIZE_MS) {
+    await flushShortsBuffer(shortsBuffer);
   }
   if (pendingRows.length) await syncPending();
 });
