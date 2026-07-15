@@ -18,6 +18,8 @@ const SECTIONS = [
         desc: 'La culture culinaire française décortiquée, 30 min par épisode.', url: 'https://podcasts.apple.com/fr/podcast/bouffons/id1324604234' },
       { id: 'gen-duolingo', lang: 'en', kind: '🎙️', title: 'Duolingo French Podcast',
         desc: 'Histoires vraies mi-anglais mi-français — les jours de fatigue.', url: 'https://podcast.duolingo.com/french' },
+      { id: 'gen-easyfrench', lang: 'fr', kind: '▶️', title: 'Easy French — sous-titres FR+EN incrustés',
+        desc: 'Micro-trottoirs avec double sous-titrage sur chaque vidéo — cherchez « Paris ou Marseille ? » avec InnerFrench.', url: yt('easy french marseille paris') },
       { id: 'gen-ricksteves', lang: 'en', kind: '▶️', title: "Rick Steves' Europe — France episodes",
         desc: 'Le classique anglophone: Riviera, Provence, French Alps.', url: yt('rick steves france riviera provence') },
     ],
