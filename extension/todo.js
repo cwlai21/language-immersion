@@ -77,6 +77,46 @@ const SECTIONS = [
     ],
   },
   {
+    title: '🚗 Sur la route',
+    blurb: 'Vous conduisez — de quoi remplir les trajets et éviter les pièges au volant.',
+    items: [
+      { id: 'route-conduire-fr', lang: 'fr', kind: '▶️', title: 'Conduire en France — péages, radars, priorité à droite',
+        desc: 'Le télépéage, les 80 km/h, la fameuse priorité à droite en ville.', url: yt('conduire en france conseils autoroute péage priorité à droite') },
+      { id: 'route-vignette', lang: 'fr', kind: '▶️', title: 'Conduire en Suisse — la vignette autoroutière',
+        desc: 'Vignette obligatoire (~40 CHF), limites différentes, radars impitoyables — à voir AVANT de passer la frontière.', url: yt('conduire en suisse vignette autoroute règles') },
+      { id: 'route-baladeurs', lang: 'fr', kind: '🎙️', title: 'Les Baladeurs (Les Others)',
+        desc: 'Récits d’aventure immersifs — le podcast parfait pour les longues routes.', url: 'https://podcasts.apple.com/fr/podcast/les-baladeurs/id1388330691' },
+    ],
+  },
+  {
+    title: '⚽ Football',
+    blurb: 'Trois villes de Ligue 1 sur votre route: OL, OM, OGC Nice — et le Servette à Genève.',
+    items: [
+      { id: 'foot-afterfoot', lang: 'fr', kind: '🎙️', title: 'L’After Foot (RMC)',
+        desc: 'L’émission foot de référence — quotidienne, parfaite en voiture.', url: 'https://podcasts.apple.com/fr/podcast/lafter-foot/id140644703' },
+      { id: 'foot-om', lang: 'fr', kind: '▶️', title: 'L’OM & le Vélodrome — la ferveur marseillaise',
+        desc: 'Le stade se visite; comprendre l’OM, c’est comprendre Marseille.', url: yt('OM supporters vélodrome documentaire') },
+      { id: 'foot-ol', lang: 'fr', kind: '▶️', title: 'L’Olympique Lyonnais & le Groupama Stadium',
+        desc: 'L’histoire de l’OL, ses sept titres d’affilée — visite du stade possible.', url: yt('olympique lyonnais histoire documentaire') },
+      { id: 'foot-nice-servette', lang: 'fr', kind: '▶️', title: 'OGC Nice & Servette Genève',
+        desc: 'Les deux autres clubs de votre itinéraire — match à caler si les dates tombent bien ?', url: yt('OGC Nice Servette Genève histoire club') },
+    ],
+  },
+  {
+    title: '⌚ Horlogerie de luxe',
+    blurb: 'Besançon = capitale horlogère française (musée du Temps), Genève = capitale du luxe (Patek, Rolex, Vacheron).',
+    items: [
+      { id: 'montre-suisse', lang: 'fr', kind: '▶️', title: 'Dans les manufactures suisses — Patek, Rolex, Audemars',
+        desc: 'Documentaires sur la haute horlogerie; le musée Patek Philippe à Genève vaut la visite.', url: yt('manufacture horlogerie suisse documentaire patek philippe rolex') },
+      { id: 'montre-lip', lang: 'fr', kind: '▶️', title: 'LIP — la saga horlogère de Besançon',
+        desc: 'L’usine autogérée des années 70, une histoire ouvrière mythique — et des LIP au musée du Temps.', url: yt('LIP besançon horlogerie documentaire autogestion') },
+      { id: 'montre-besancon', lang: 'fr', kind: '▶️', title: 'Besançon, capitale française de l’horlogerie',
+        desc: 'L’observatoire chronométrique, le musée du Temps, la renaissance des ateliers.', url: yt('besançon horlogerie musée du temps documentaire') },
+      { id: 'montre-vallee', lang: 'fr', kind: '▶️', title: 'La Vallée de Joux — berceau de la haute horlogerie',
+        desc: 'À 1h de Genève: Audemars Piguet, Jaeger-LeCoultre, et l’Espace Horloger.', url: yt('vallée de joux horlogerie documentaire') },
+    ],
+  },
+  {
     title: '⛲ Genève & le Léman',
     blurb: 'La Suisse romande — même langue, autre pays.',
     items: [
