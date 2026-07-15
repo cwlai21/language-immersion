@@ -182,31 +182,21 @@ function renderMainChart() {
       { label: `🇬🇧 ${t('english')}`, data: en.data, backgroundColor: LANG_COLORS.en, borderRadius: 4 },
     ];
   } else {
-    const series = seriesFor(filteredSessions());
-    labels = series.labels;
-    // Keep the language's hue everywhere; goal-met periods just get a
-    // deeper shade (green would look like the English color).
-    const base = langFilter === 'fr' ? '43, 79, 216' : '22, 163, 74';
-    const deep = `rgba(${base}, 0.95)`;
-    const pale = `rgba(${base}, 0.4)`;
-    datasets = [{
-      label: t('minutesLabel'),
-      data: series.data,
-      backgroundColor: series.data.map((v) =>
-        goalLine ? (v >= goalLine ? deep : pale) : `rgba(${base}, 0.75)`),
-      borderRadius: 6,
-    }];
-    if (goalLine) {
-      // Explain the shades: deep = goal met, pale = under goal.
-      legend = {
-        display: true,
-        labels: {
-          generateLabels: () => [
-            { text: `${t('goalMet')} (≥ ${fmtMinutes(goalLine)})`, fillStyle: deep, strokeStyle: 'transparent' },
-            { text: t('underGoal'), fillStyle: pale, strokeStyle: 'transparent' },
-          ],
-        },
-      };
+    // Single-language view: stack by source, matching the donut's colors.
+    const sessions = filteredSessions();
+    const TYPE_COLORS = { youtube: '#ef4135', podcast: '#2b4fd8', anki: '#f59e0b', reading: '#8b5cf6' };
+    stacked = true;
+    legend = { display: true };
+    datasets = [];
+    for (const type of Object.keys(TYPE_META)) {
+      const series = seriesFor(sessions.filter((s) => (TYPE_META[s.type] ? s.type : 'youtube') === type));
+      if (!labels) labels = series.labels;
+      datasets.push({
+        label: `${TYPE_META[type].icon} ${type === 'reading' ? t('readingLbl') : TYPE_META[type].label}`,
+        data: series.data,
+        backgroundColor: TYPE_COLORS[type],
+        borderRadius: 3,
+      });
     }
   }
 
