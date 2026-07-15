@@ -7,6 +7,7 @@ importScripts('config.js', 'supabase.js');
 
 const MIN_SESSION_SECONDS = 30;
 const IDLE_FINALIZE_MS = 3 * 60 * 1000;
+const SHORTS_FLUSH_IDLE_MS = 90 * 1000; // shorts pool flushes sooner
 const MAX_OVERRIDES = 100;
 
 const BADGE_COLORS = { fr: '#2b4fd8', en: '#16a34a' };
@@ -265,8 +266,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await finalizeSession(currentSession);
     setBadge(null);
   }
-  // Shorts binge ended (no shorts heartbeat for 3+ min) — flush the pool.
-  if (shortsBuffer.date && Date.now() - (shortsBuffer.lastBeat || 0) > IDLE_FINALIZE_MS) {
+  // Shorts binge ended (no shorts heartbeat for 90s+) — flush the pool.
+  if (shortsBuffer.date && Date.now() - (shortsBuffer.lastBeat || 0) > SHORTS_FLUSH_IDLE_MS) {
     await flushShortsBuffer(shortsBuffer);
   }
   if (pendingRows.length) await syncPending();
