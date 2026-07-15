@@ -60,8 +60,12 @@ function send(msg) {
   }
 }
 
-// The popup asks the tab what's on screen right now.
+// The popup asks the tab what's on screen right now; the worker pings to
+// check the scripts are alive (self-healing injection).
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'ping') {
+    sendResponse({ ok: true });
+  }
   if (msg.type === 'get-page-status') {
     sendResponse({ video: current, playing: isPlaying() });
   }

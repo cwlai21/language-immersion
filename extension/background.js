@@ -21,7 +21,9 @@ chrome.runtime.onStartup.addListener(() => {
 
 // Content scripts only auto-inject into pages loaded AFTER the extension —
 // a YouTube tab that was already open would stay invisible until a manual
-// refresh. Inject into existing tabs on install/update instead.
+// refresh. Self-heal: ping every YouTube tab and inject wherever nobody
+// answers. Runs on install AND on every minute tick, so a tab that missed
+// injection (discarded tab, failed install-time inject, …) recovers alone.
 async function injectIntoOpenTabs() {
   let tabs = [];
   try {
@@ -30,6 +32,10 @@ async function injectIntoOpenTabs() {
     return;
   }
   for (const tab of tabs) {
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'ping' });
+      continue; // scripts alive in this tab
+    } catch { /* no receiver — inject below */ }
     try {
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['page-bridge.js'], world: 'MAIN' });
@@ -251,6 +257,7 @@ async function finalizeSession(session) {
 /* ── Idle finalization + retry queue ─────── */
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== 'tick') return;
+  injectIntoOpenTabs(); // self-heal tabs that lost/never got their scripts
   const { currentSession, pendingRows = [], shortsBuffer = {} } =
     await chrome.storage.local.get(['currentSession', 'pendingRows', 'shortsBuffer']);
 
