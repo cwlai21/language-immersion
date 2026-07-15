@@ -65,6 +65,19 @@ function trackDecision(video, overrides, trackedChannels) {
   return null;
 }
 
+// The badge is global but heartbeats come from every YouTube tab — paused
+// background tabs must not wipe a badge set by the tab that's playing.
+async function updateBadge(lang, playing, sender) {
+  const tabId = sender && sender.tab ? sender.tab.id : null;
+  if (lang && playing) {
+    setBadge(lang);
+    await chrome.storage.local.set({ badgeOwner: tabId });
+    return;
+  }
+  const { badgeOwner = null } = await chrome.storage.local.get('badgeOwner');
+  if (badgeOwner === null || badgeOwner === tabId) setBadge(null);
+}
+
 function setBadge(lang) {
   if (lang) {
     chrome.action.setBadgeText({ text: lang.toUpperCase() });
@@ -75,16 +88,16 @@ function setBadge(lang) {
 }
 
 /* ── Message routing ─────────────────────── */
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  handle(msg)
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  handle(msg, sender)
     .then(sendResponse)
     .catch((e) => sendResponse({ error: String(e) }));
   return true; // async response
 });
 
-async function handle(msg) {
+async function handle(msg, sender) {
   switch (msg.type) {
-    case 'heartbeat':   return onHeartbeat(msg);
+    case 'heartbeat':   return onHeartbeat(msg, sender);
     case 'left-video':  return finalizeCurrent();
     case 'get-tracking-status': return getTrackingStatus();
     case 'set-override': return setOverride(msg.videoId, msg.value);
@@ -95,7 +108,7 @@ async function handle(msg) {
 }
 
 /* ── Session accumulation ────────────────── */
-async function onHeartbeat({ video, seconds, playing }) {
+async function onHeartbeat({ video, seconds, playing }, sender) {
   const { currentSession = null, overrides = {}, trackedChannels = [] } =
     await chrome.storage.local.get(['currentSession', 'overrides', 'trackedChannels']);
 
@@ -123,7 +136,7 @@ async function onHeartbeat({ video, seconds, playing }) {
       shortsBuffer.lastBeat = Date.now();
       await chrome.storage.local.set({ shortsBuffer });
     }
-    setBadge(decision && playing ? decision.lang : null);
+    await updateBadge(decision ? decision.lang : null, playing, sender);
     return {
       tracked: !!decision,
       lang: decision ? decision.lang : null,
@@ -158,7 +171,7 @@ async function onHeartbeat({ video, seconds, playing }) {
   }
 
   await chrome.storage.local.set({ currentSession: session });
-  setBadge(decision && playing ? decision.lang : null);
+  await updateBadge(decision ? decision.lang : null, playing, sender);
   return {
     tracked: !!decision,
     lang: decision ? decision.lang : null,
