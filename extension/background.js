@@ -114,8 +114,12 @@ async function onHeartbeat({ video, seconds, playing }) {
         shortsBuffer.date = day;
         shortsBuffer.fr = 0;
         shortsBuffer.en = 0;
+        shortsBuffer.titles = { fr: {}, en: {} };
       }
       shortsBuffer[decision.lang] = (shortsBuffer[decision.lang] || 0) + seconds;
+      shortsBuffer.titles = shortsBuffer.titles || { fr: {}, en: {} };
+      const titles = shortsBuffer.titles[decision.lang];
+      if (video.title) titles[video.title] = (titles[video.title] || 0) + seconds;
       shortsBuffer.lastBeat = Date.now();
       await chrome.storage.local.set({ shortsBuffer });
     }
@@ -178,12 +182,20 @@ async function flushShortsBuffer(buffer) {
   for (const lang of ['fr', 'en']) {
     const seconds = shortsBuffer[lang] || 0;
     if (seconds < MIN_SESSION_SECONDS) continue;
+    // Name the pooled row after what was actually watched: top titles by time.
+    const titles = Object.entries((shortsBuffer.titles || {})[lang] || {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name);
+    const top = titles.slice(0, 3).map((name) => (name.length > 60 ? name.slice(0, 57) + '…' : name));
+    const label = top.length
+      ? `Shorts: ${top.join(' · ')}${titles.length > 3 ? ` +${titles.length - 3}` : ''}`
+      : 'YouTube Shorts';
     const row = {
       date: shortsBuffer.date,
       seconds,
       language: lang,
       type: 'youtube',
-      title: 'YouTube Shorts',
+      title: label,
       channel: 'Shorts',
       video_id: '',
       source: 'auto',
