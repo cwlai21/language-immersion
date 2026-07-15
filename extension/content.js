@@ -2,6 +2,10 @@
 // counts playback seconds, and heartbeats them to the background worker,
 // which decides whether the video counts as French and stores the session.
 
+(() => {
+if (window.__ecouteContentLoaded) return; // double-injection guard
+window.__ecouteContentLoaded = true;
+
 let current = null; // { videoId, title, channel, channelId, asrLang, captionLangs }
 let pendingSeconds = 0;
 
@@ -62,3 +66,4 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ video: current, playing: isPlaying() });
   }
 });
+})();

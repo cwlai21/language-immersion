@@ -13,10 +13,29 @@ const BADGE_COLORS = { fr: '#2b4fd8', en: '#16a34a' };
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create('tick', { periodInMinutes: 1 });
+  injectIntoOpenTabs();
 });
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create('tick', { periodInMinutes: 1 });
 });
+
+// Content scripts only auto-inject into pages loaded AFTER the extension —
+// a YouTube tab that was already open would stay invisible until a manual
+// refresh. Inject into existing tabs on install/update instead.
+async function injectIntoOpenTabs() {
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: 'https://www.youtube.com/*' });
+  } catch {
+    return;
+  }
+  for (const tab of tabs) {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['page-bridge.js'], world: 'MAIN' });
+    } catch { /* tab not injectable (discarded, error page, …) */ }
+  }
+}
 
 /* ── Helpers ─────────────────────────────── */
 // The tracker's day starts at 4am (like Anki's rollover), so late-night

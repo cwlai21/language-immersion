@@ -2,6 +2,9 @@
 // Extracts video metadata + language signals and hands them to content.js
 // via a CustomEvent (detail is JSON — objects don't cross world boundaries).
 (() => {
+  if (window.__ecouteBridgeLoaded) return; // double-injection guard
+  window.__ecouteBridgeLoaded = true;
+
   function getPlayerResponse() {
     const player = document.getElementById('movie_player');
     try {
