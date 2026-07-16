@@ -61,7 +61,20 @@
         <option value="podcast">🎙️ Podcast</option>
         <option value="youtube">▶️ YouTube</option>
               <option value="reading">📖 Reading</option>
+        <option value="series">📺 Series</option>
       </select>
+    </div>
+    <div class="row" id="seriesRow" hidden>
+      <input type="text" id="mSeriesName" class="grow" data-i18n-ph="seriesNamePh" placeholder="Series name">
+      <input type="number" id="mSeason" min="1" data-i18n-ph="seasonPh" placeholder="Season">
+      <input type="number" id="mEpisode" min="1" data-i18n-ph="episodePh" placeholder="Episode">
+    </div>
+    <p class="pending-text" id="seriesLookupStatus" hidden></p>
+    <div class="row" id="tmdbKeyRow" hidden>
+      <input type="text" id="mTmdbKey" class="grow" data-i18n-ph="tmdbKeyPh" placeholder="TMDB API key (themoviedb.org/settings/api)">
+    </div>
+    <button type="button" id="tmdbKeyToggle" class="mini-btn" hidden data-i18n="changeTmdbKey">Change TMDB key</button>
+    <div class="row">
       <input type="text" id="mTitle" class="grow" data-i18n-ph="titleOptional" placeholder="Title (optional)">
     </div>
     <button type="submit" class="mini-btn primary full" data-i18n="addSession">+ Add Session</button>
@@ -70,9 +83,11 @@
   <button id="dashboardBtn" class="dash-btn" data-i18n="openDashboard">Open Dashboard ↗</button>
 
   <script src="config.js"></script>
+  <script src="config.local.js"></script>
   <script src="supabase.js"></script>
   <script src="i18n.js"></script>
   <script src="lang-detect.js"></script>
+  <script src="tmdb.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

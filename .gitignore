@@ -1,5 +1,6 @@
 # Secrets — never commit
 podcast-trackers/spotify-worker/.dev.vars
+extension/config.local.js
 
 .DS_Store
 __pycache__/

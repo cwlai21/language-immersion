@@ -13,12 +13,21 @@ create table if not exists listening_sessions (
   channel    text not null default '',
   video_id   text not null default '',
   source     text not null default 'auto',
+  season     integer,
+  episode    integer,
   created_at timestamptz not null default now()
 );
 
 -- Upgrade path for tables created before the language column existed.
 alter table listening_sessions
   add column if not exists language text not null default 'fr';
+
+-- Upgrade path for tables created before series tracking existed. Season
+-- and episode are only meaningful for type = 'series'; left null otherwise.
+alter table listening_sessions
+  add column if not exists season integer;
+alter table listening_sessions
+  add column if not exists episode integer;
 
 -- Rebuild the value checks so they always match the current app: drop every
 -- check constraint on the table (their names vary between versions of this
@@ -39,7 +48,7 @@ alter table listening_sessions add constraint listening_sessions_seconds_check
 alter table listening_sessions add constraint listening_sessions_language_check
   check (language in ('fr', 'en'));
 alter table listening_sessions add constraint listening_sessions_type_check
-  check (type in ('youtube', 'podcast', 'anki', 'reading'));
+  check (type in ('youtube', 'podcast', 'anki', 'reading', 'series'));
 alter table listening_sessions add constraint listening_sessions_source_check
   check (source in ('auto', 'manual', 'timer', 'anki', 'apple', 'spotify', 'import'));
 

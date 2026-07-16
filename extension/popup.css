@@ -122,6 +122,7 @@ body {
 }
 
 .row { display: flex; gap: 6px; margin-bottom: 6px; }
+.row[hidden] { display: none; }
 .grow { flex: 1; min-width: 0; }
 
 input, select {
@@ -136,6 +137,7 @@ input, select {
 input:focus, select:focus { outline: 2px solid #2b4fd8; outline-offset: -1px; }
 #mDate { width: 118px; }
 #mMinutes { width: 70px; }
+#mSeason, #mEpisode { width: 64px; }
 
 .mini-btn {
   padding: 6px 10px;

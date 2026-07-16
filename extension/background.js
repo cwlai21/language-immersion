@@ -3,7 +3,10 @@
 // offline retry queue). All state lives in chrome.storage.local because MV3
 // workers unload at any time.
 
-importScripts('config.js', 'supabase.js', 'lang-detect.js');
+importScripts('config.js', 'supabase.js', 'lang-detect.js', 'tmdb.js');
+try {
+  importScripts('config.local.js'); // git-ignored personal TMDB key — optional
+} catch { /* not present in this checkout, fine */ }
 
 const MIN_SESSION_SECONDS = 30;
 const IDLE_FINALIZE_MS = 3 * 60 * 1000;
@@ -38,6 +41,13 @@ async function injectIntoOpenTabs() {
       continue; // scripts alive in this tab
     } catch { /* no receiver — inject below */ }
     try {
+      // The unresponsive script left its double-injection guard flag set on
+      // `window` (isolated + MAIN world each persist across an extension
+      // reload, even though the orphaned script's chrome.* calls are now
+      // dead). Clear both before re-injecting, or the fresh scripts would
+      // see the stale flag and silently no-op.
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => { delete window.__ecouteContentLoaded; } });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: () => { delete window.__ecouteBridgeLoaded; } });
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['page-bridge.js'], world: 'MAIN' });
     } catch { /* tab not injectable (discarded, error page, …) */ }
@@ -115,6 +125,11 @@ async function handle(msg, sender) {
     case 'set-override': return setOverride(msg.videoId, msg.value);
     case 'toggle-channel': return toggleChannel(msg.channelId, msg.channel, msg.lang);
     case 'sync-now': return syncPending();
+    // Runs in the service worker rather than the popup because the popup
+    // (and everything running in it, including in-flight fetches) is
+    // killed the instant it loses focus — e.g. clicking over to IMDb to
+    // check an episode number mid-lookup. The worker survives that.
+    case 'tmdb-lookup': return { info: await tmdbLookupEpisode(msg.name, msg.season, msg.episode) };
     default: return { error: 'unknown message: ' + msg.type };
   }
 }

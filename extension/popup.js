@@ -210,11 +210,111 @@ async function renderStats() {
   }
 }
 
+/* ── Series entry (TMDB duration lookup) ──── */
+const mType = document.getElementById('mType');
+const mMinutes = document.getElementById('mMinutes');
+const mTitle = document.getElementById('mTitle');
+const seriesRow = document.getElementById('seriesRow');
+const seriesLookupStatus = document.getElementById('seriesLookupStatus');
+const tmdbKeyRow = document.getElementById('tmdbKeyRow');
+const tmdbKeyToggle = document.getElementById('tmdbKeyToggle');
+const mSeriesName = document.getElementById('mSeriesName');
+const mSeason = document.getElementById('mSeason');
+const mEpisode = document.getElementById('mEpisode');
+const mTmdbKey = document.getElementById('mTmdbKey');
+
+let seriesLookupTimer = null;
+
+async function refreshSeriesUi() {
+  const isSeries = mType.value === 'series';
+  seriesRow.hidden = !isSeries;
+  seriesLookupStatus.hidden = !isSeries;
+  // Distinct from the generic "Title" placeholder so it's never mistaken
+  // for the series-name field above it.
+  mTitle.dataset.i18nPh = isSeries ? 'episodeTitlePh' : 'titleOptional';
+  mTitle.placeholder = t(mTitle.dataset.i18nPh);
+  if (!isSeries) return;
+
+  const hasKey = !!(await tmdbGetApiKey());
+  tmdbKeyRow.hidden = hasKey;
+  tmdbKeyToggle.hidden = !hasKey;
+  if (!hasKey) seriesLookupStatus.textContent = t('needTmdbKey');
+}
+
+mType.addEventListener('change', refreshSeriesUi);
+
+tmdbKeyToggle.addEventListener('click', async () => {
+  mTmdbKey.value = (await tmdbGetApiKey()) || '';
+  tmdbKeyRow.hidden = false;
+  tmdbKeyToggle.hidden = true;
+});
+
+// Debounced like the series fields below, rather than waiting for blur —
+// inside a popup, clicking outside the field closes the whole popup instead
+// of just blurring it, so "change" alone would rarely fire.
+let tmdbKeySaveTimer = null;
+mTmdbKey.addEventListener('input', () => {
+  clearTimeout(tmdbKeySaveTimer);
+  tmdbKeySaveTimer = setTimeout(async () => {
+    const key = mTmdbKey.value.trim();
+    if (!key) return;
+    await tmdbSetApiKey(key);
+    scheduleSeriesLookup();
+  }, 150);
+});
+mTmdbKey.addEventListener('blur', () => {
+  if (mTmdbKey.value.trim()) refreshSeriesUi(); // collapse the key row once saved
+});
+
+function scheduleSeriesLookup() {
+  clearTimeout(seriesLookupTimer);
+  // Short on purpose: this timer lives in the popup, which is killed the
+  // instant it loses focus (e.g. clicking away to check an episode number),
+  // so anything still waiting here when that happens is lost before it can
+  // even reach the background worker.
+  seriesLookupTimer = setTimeout(runSeriesLookup, 150);
+}
+
+async function runSeriesLookup() {
+  const name = mSeriesName.value.trim();
+  const season = parseInt(mSeason.value, 10);
+  const episode = parseInt(mEpisode.value, 10);
+  if (!name || !season || !episode) return;
+  if (!(await tmdbGetApiKey())) return;
+
+  seriesLookupStatus.hidden = false;
+  seriesLookupStatus.textContent = t('lookupSearching');
+  try {
+    // Routed through the background worker, which outlives the popup —
+    // the popup itself (and any fetch running inside it) is killed the
+    // instant it loses focus, e.g. clicking over to check an episode
+    // number on IMDb mid-lookup.
+    const { info, error } = await chrome.runtime.sendMessage({ type: 'tmdb-lookup', name, season, episode });
+    if (error) throw new Error(error);
+    if (info) {
+      mMinutes.value = info.minutes;
+      if (!mTitle.value.trim() && info.title) mTitle.value = info.title;
+      seriesLookupStatus.textContent = `${t('lookupFound')} ${info.minutes}m${info.title ? ' — ' + info.title : ''}`;
+    } else {
+      seriesLookupStatus.textContent = t('lookupNotFound');
+    }
+  } catch (e) {
+    seriesLookupStatus.textContent = `⚠ ${e.message}`;
+  }
+}
+
+[mSeriesName, mSeason, mEpisode].forEach((el) =>
+  el.addEventListener('input', scheduleSeriesLookup));
+
 /* ── Manual entry ─────────────────────────── */
 document.getElementById('manualForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const minutes = parseInt(document.getElementById('mMinutes').value, 10);
+  const minutes = parseInt(mMinutes.value, 10);
   if (!minutes) return;
+  const type = mType.value;
+  const isSeries = type === 'series';
+  if (isSeries && !mSeriesName.value.trim()) return;
+
   const btn = e.target.querySelector('button[type=submit]');
   btn.disabled = true;
   try {
@@ -222,12 +322,21 @@ document.getElementById('manualForm').addEventListener('submit', async (e) => {
       date: document.getElementById('mDate').value,
       seconds: minutes * 60,
       language: document.getElementById('mLang').value,
-      type: document.getElementById('mType').value,
-      title: document.getElementById('mTitle').value.trim(),
+      type,
+      title: mTitle.value.trim(),
       source: 'manual',
+      ...(isSeries ? {
+        channel: mSeriesName.value.trim(),
+        season: parseInt(mSeason.value, 10) || null,
+        episode: parseInt(mEpisode.value, 10) || null,
+      } : {}),
     });
-    document.getElementById('mMinutes').value = '';
-    document.getElementById('mTitle').value = '';
+    mMinutes.value = '';
+    mTitle.value = '';
+    mSeriesName.value = '';
+    mSeason.value = '';
+    mEpisode.value = '';
+    seriesLookupStatus.textContent = '';
     btn.textContent = t('added');
     setTimeout(() => { btn.textContent = t('addSession'); }, 1200);
     loadStats();
@@ -247,6 +356,7 @@ document.querySelectorAll('[data-statslang]').forEach((pill) => {
     statsLang = pill.dataset.statslang;
     await chrome.storage.sync.set({ statsLang });
     setUiLang(statsLang); // Français pill → French UI
+    document.getElementById('mLang').value = statsLang; // default manual entries to the active language too
     applyI18n();
     renderStatus();
     renderStats();
@@ -268,6 +378,8 @@ document.getElementById('dashboardBtn').addEventListener('click', () => {
   setUiLang(statsLang);
   applyI18n();
   document.getElementById('mDate').value = todayKey();
+  document.getElementById('mLang').value = statsLang;
+  await refreshSeriesUi();
   await loadStatus();
   await loadStats();
   // Refresh the live session counter while the popup stays open.

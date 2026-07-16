@@ -76,7 +76,7 @@ function goalStatus(stats) {
 /* ── Data ─────────────────────────────────── */
 async function fetchSessions() {
   allSessions = await sb.listSessions(
-    'select=id,date,seconds,language,type,title,channel,source,created_at&order=date.desc,created_at.desc&limit=5000'
+    'select=id,date,seconds,language,type,title,channel,source,season,episode,created_at&order=date.desc,created_at.desc&limit=5000'
   );
 }
 
@@ -211,7 +211,7 @@ function renderMainChart() {
   } else {
     // Single-language view: stack by source, matching the donut's colors.
     const sessions = filteredSessions();
-    const TYPE_COLORS = { youtube: '#ef4135', podcast: '#2b4fd8', anki: '#f59e0b', reading: '#8b5cf6' };
+    const TYPE_COLORS = { youtube: '#ef4135', podcast: '#2b4fd8', anki: '#f59e0b', reading: '#8b5cf6', series: '#14b8a6' };
     stacked = true;
     legend = { display: true };
     datasets = [];
@@ -219,7 +219,7 @@ function renderMainChart() {
       const series = seriesFor(sessions.filter((s) => (TYPE_META[s.type] ? s.type : 'youtube') === type));
       if (!labels) labels = series.labels;
       datasets.push({
-        label: `${TYPE_META[type].icon} ${type === 'reading' ? t('readingLbl') : TYPE_META[type].label}`,
+        label: `${TYPE_META[type].icon} ${typeLabel(type)}`,
         data: series.data,
         backgroundColor: TYPE_COLORS[type],
         borderRadius: 3,
@@ -265,7 +265,7 @@ function windowStartKey() {
 
 function renderTypeChart() {
   const start = windowStartKey();
-  const totals = { youtube: 0, podcast: 0, anki: 0, reading: 0 };
+  const totals = { youtube: 0, podcast: 0, anki: 0, reading: 0, series: 0 };
   for (const s of filteredSessions()) {
     if (s.date < start) continue;
     const key = totals[s.type] !== undefined ? s.type : 'youtube';
@@ -276,10 +276,10 @@ function renderTypeChart() {
   typeChart = new Chart(document.getElementById('typeChart'), {
     type: 'doughnut',
     data: {
-      labels: ['YouTube', 'Podcast', 'Anki', t('readingLbl')],
+      labels: ['YouTube', 'Podcast', 'Anki', t('readingLbl'), t('seriesLbl')],
       datasets: [{
-        data: [totals.youtube, totals.podcast, totals.anki, totals.reading].map(Math.round),
-        backgroundColor: ['#ef4135', '#2b4fd8', '#f59e0b', '#8b5cf6'],
+        data: [totals.youtube, totals.podcast, totals.anki, totals.reading, totals.series].map(Math.round),
+        backgroundColor: ['#ef4135', '#2b4fd8', '#f59e0b', '#8b5cf6', '#14b8a6'],
         borderWidth: 0,
       }],
     },
@@ -330,7 +330,16 @@ const TYPE_META = {
   podcast: { icon: '🎙️', label: 'Podcast' },
   reading: { icon: '📖', label: 'Reading' },
   anki: { icon: '📇', label: 'Anki' },
+  series: { icon: '📺', label: 'Series' },
 };
+
+// YouTube/Podcast/Anki are proper nouns and stay in English; Reading and
+// Series are generic words, so they follow the UI's FR/EN language.
+function typeLabel(type) {
+  if (type === 'reading') return t('readingLbl');
+  if (type === 'series') return t('seriesLbl');
+  return TYPE_META[type].label;
+}
 
 const hm = (ms) => {
   const d = new Date(ms);
@@ -375,7 +384,8 @@ function sessionRow(rows) {
   info.className = 'session-info';
   const title = document.createElement('div');
   title.className = 'session-title';
-  title.textContent = s.title || t('untitled');
+  const episodeTag = s.type === 'series' && s.season && s.episode ? `S${s.season}E${s.episode} · ` : '';
+  title.textContent = episodeTag + (s.title || t('untitled'));
   const meta = document.createElement('div');
   meta.className = 'session-meta';
   const bits = [s.date];
@@ -521,7 +531,7 @@ function renderSessionList() {
       const summary = document.createElement('summary');
       const groupTotal = group.reduce((sum, s) => sum + s.seconds, 0) / 60;
       summary.innerHTML =
-        `<span>${TYPE_META[type].icon} ${type === 'reading' ? t('readingLbl') : TYPE_META[type].label}</span>` +
+        `<span>${TYPE_META[type].icon} ${typeLabel(type)}</span>` +
         `<span class="src-sub">${merged.length} ${t('sessionsUnit')} · ${fmtMinutes(groupTotal)}</span>`;
       details.appendChild(summary);
 
@@ -545,7 +555,7 @@ function showError(e) {
 
 /* ── CSV export ───────────────────────────── */
 document.getElementById('exportBtn').addEventListener('click', () => {
-  const rows = [['date', 'minutes', 'language', 'type', 'title', 'channel', 'source']];
+  const rows = [['date', 'minutes', 'language', 'type', 'title', 'channel', 'source', 'season', 'episode']];
   for (const s of [...allSessions].reverse()) {
     rows.push([
       s.date,
@@ -555,6 +565,8 @@ document.getElementById('exportBtn').addEventListener('click', () => {
       `"${(s.title || '').replace(/"/g, '""')}"`,
       `"${(s.channel || '').replace(/"/g, '""')}"`,
       s.source,
+      s.season ?? '',
+      s.episode ?? '',
     ]);
   }
   const blob = new Blob(['﻿' + rows.map((r) => r.join(',')).join('\n')], {
