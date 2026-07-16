@@ -277,19 +277,33 @@ function labelForm(action) {
     <form id="labelform">
       <input name="title" autofocus autocomplete="off" placeholder="e.g. Le Petit Prince, ch. 3">
       <button type="submit">Save 📝</button>
+      <button type="button" id="skipbtn" class="secondary">Skip</button>
     </form>
+    <p><small id="autonote">Closes by itself in 20s if left empty.</small></p>
     <script>
+      const closeTab = () => { window.open('', '_self'); window.close(); };
+      const input = document.querySelector('input[name=title]');
+      // Auto-close when the title is left empty — it's optional, the session
+      // is already saved. Typing anything cancels the countdown.
+      let autoClose = setTimeout(closeTab, 20000);
+      input.addEventListener('input', () => {
+        clearTimeout(autoClose);
+        document.getElementById('autonote').textContent = '';
+      });
+      document.getElementById('skipbtn').onclick = closeTab;
       document.getElementById('labelform').addEventListener('submit', async (e) => {
         e.preventDefault();
+        clearTimeout(autoClose);
+        const fd = new FormData(e.target);
+        if (!String(fd.get('title') || '').trim()) return closeTab(); // empty = skip
         const btn = e.target.querySelector('button');
         btn.disabled = true;
         btn.textContent = 'Saving…';
         try {
-          const fd = new FormData(e.target);
           const res = await fetch('${action}', { method: 'POST', body: fd });
           if (!res.ok) throw new Error(res.status);
           document.body.innerHTML = '<h2>📝 Saved !</h2>';
-          setTimeout(() => { window.open('', '_self'); window.close(); }, 800);
+          setTimeout(closeTab, 800);
         } catch (err) {
           btn.disabled = false;
           btn.textContent = 'Save 📝 (retry)';
