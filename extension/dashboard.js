@@ -46,6 +46,33 @@ function currentGoal() {
   return langFilter === 'all' ? goals.fr + goals.en : goals[langFilter];
 }
 
+// On the "All" view the daily goal is only met once *both* languages have
+// individually reached their own goal — a big French session doesn't cover
+// for English (or vice versa).
+function goalStatus(stats) {
+  const tk = todayKey();
+  if (langFilter === 'all') {
+    const frToday = allSessions
+      .filter((s) => s.date === tk && sessionLang(s) === 'fr')
+      .reduce((sum, s) => sum + s.seconds / 60, 0);
+    const enToday = allSessions
+      .filter((s) => s.date === tk && sessionLang(s) === 'en')
+      .reduce((sum, s) => sum + s.seconds / 60, 0);
+    const frPct = goals.fr > 0 ? Math.min(1, frToday / goals.fr) : 1;
+    const enPct = goals.en > 0 ? Math.min(1, enToday / goals.en) : 1;
+    return {
+      done: frToday >= goals.fr && enToday >= goals.en,
+      pct: Math.min(frPct, enPct),
+      frToday, enToday,
+    };
+  }
+  const goal = goals[langFilter];
+  return {
+    done: stats.today >= goal,
+    pct: goal > 0 ? Math.min(1, stats.today / goal) : 1,
+  };
+}
+
 /* ── Data ─────────────────────────────────── */
 async function fetchSessions() {
   allSessions = await sb.listSessions(
@@ -282,12 +309,16 @@ function render() {
   document.getElementById('statMonthAvg').textContent = `${fmtMinutes(stats.monthAvg)} ${t('avgPerDay')}`;
   document.getElementById('statTotal').textContent = `${fmtMinutes(stats.total)} ${t('totalAllTime')}`;
 
-  const pct = Math.min(100, Math.round((stats.today / goal) * 100));
+  const gs = goalStatus(stats);
+  const pct = Math.round(gs.pct * 100);
   const fill = document.getElementById('goalFill');
   fill.style.width = pct + '%';
-  fill.classList.toggle('done', pct >= 100);
-  document.getElementById('goalText').textContent =
-    pct >= 100 ? t('goalDone') : `${Math.round(stats.today)} ${t('goalOf')} ${goal} ${t('goalUnit')}`;
+  fill.classList.toggle('done', gs.done);
+  document.getElementById('goalText').textContent = gs.done
+    ? t('goalDone')
+    : langFilter === 'all'
+      ? `🇫🇷 ${Math.round(gs.frToday)}/${goals.fr} · 🇬🇧 ${Math.round(gs.enToday)}/${goals.en} ${t('goalUnit')}`
+      : `${Math.round(stats.today)} ${t('goalOf')} ${goal} ${t('goalUnit')}`;
 
   renderMainChart();
   renderTypeChart();
