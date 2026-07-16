@@ -26,7 +26,17 @@
     return m ? m[1] : null;
   }
 
+  const FAST_RETRY_MS = 1000;
+  const FAST_RETRY_LIMIT = 12; // quick burst right after load (~12s)
+  // A freshly-uploaded video can take a long while for YouTube to finish
+  // auto-captioning. Once the fast burst finds nothing, keep checking back
+  // at a much lower rate for as long as the tab stays on this video, so ASR
+  // that shows up later still gets picked up without a page reload.
+  const SLOW_POLL_MS = 2 * 60 * 1000;
+  const SLOW_POLL_LIMIT = 20; // ~40 more minutes
+
   let attempts = 0;
+  let slowAttempts = 0;
   let timer = null;
 
   function probe() {
@@ -37,7 +47,7 @@
     const details = pr && pr.videoDetails;
     // Player response can lag behind SPA navigation — retry until it matches the URL.
     if (!details || details.videoId !== urlVideoId) {
-      if (++attempts < 10) timer = setTimeout(probe, 1000);
+      if (++attempts < FAST_RETRY_LIMIT) timer = setTimeout(probe, FAST_RETRY_MS);
       return;
     }
 
@@ -60,15 +70,22 @@
     };
     window.dispatchEvent(new CustomEvent('ecoute-videoinfo', { detail: JSON.stringify(info) }));
 
-    // The caption list can load after the rest of the player response.
-    // Keep probing and re-announce when it shows up, so a late ASR track
-    // still flips the video to tracked.
-    if (!tracks.length && ++attempts < 12) timer = setTimeout(probe, 1000);
+    if (asr) return; // resolved — nothing left to poll for
+
+    // The caption list can load after the rest of the player response, or
+    // not exist yet at all for a brand-new upload. Re-announce when it
+    // shows up so a late ASR track still flips the video to tracked.
+    if (++attempts < FAST_RETRY_LIMIT) {
+      timer = setTimeout(probe, FAST_RETRY_MS);
+    } else if (slowAttempts++ < SLOW_POLL_LIMIT) {
+      timer = setTimeout(probe, SLOW_POLL_MS);
+    }
   }
 
   function schedule() {
     clearTimeout(timer);
     attempts = 0;
+    slowAttempts = 0;
     timer = setTimeout(probe, 800);
   }
 

@@ -80,6 +80,9 @@ function renderStatus() {
   const ov = overrides[video.videoId];
   const channelEntry = trackedChannels.find((c) => c.id === video.channelId);
   const detected = asrLanguage(video);
+  // No ASR yet (e.g. a video too new to be auto-captioned) — fall back to
+  // guessing from the title, same precedence as the background.
+  const titleGuess = !detected ? guessLangFromTitle(video.title) : null;
 
   // Effective language + status label (same precedence as the background).
   let effLang = null;
@@ -95,6 +98,9 @@ function renderStatus() {
   } else if (detected) {
     effLang = detected;
     label = t(detected === 'fr' ? 'detectedFr' : 'detectedEn');
+  } else if (titleGuess) {
+    effLang = titleGuess;
+    label = t(titleGuess === 'fr' ? 'guessedTitleFr' : 'guessedTitleEn');
   } else {
     label = t('notDetected');
   }

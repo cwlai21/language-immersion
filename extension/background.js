@@ -3,7 +3,7 @@
 // offline retry queue). All state lives in chrome.storage.local because MV3
 // workers unload at any time.
 
-importScripts('config.js', 'supabase.js');
+importScripts('config.js', 'supabase.js', 'lang-detect.js');
 
 const MIN_SESSION_SECONDS = 30;
 const IDLE_FINALIZE_MS = 3 * 60 * 1000;
@@ -61,7 +61,7 @@ function asrLanguage(video) {
   return null;
 }
 
-// Returns { lang: 'fr'|'en', reason: 'override'|'channel'|'asr' } or null.
+// Returns { lang: 'fr'|'en', reason: 'override'|'channel'|'asr'|'title' } or null.
 function trackDecision(video, overrides, trackedChannels) {
   const ov = overrides[video.videoId];
   if (ov !== undefined) return ov ? { lang: ov, reason: 'override' } : null;
@@ -69,6 +69,11 @@ function trackDecision(video, overrides, trackedChannels) {
   if (ch) return { lang: ch.lang, reason: 'channel' };
   const lang = asrLanguage(video);
   if (lang) return { lang, reason: 'asr' };
+  // No ASR yet — e.g. a video too new for YouTube to have auto-captioned.
+  // Fall back to a title guess until the periodic re-probe (page-bridge.js)
+  // finds real captions and this session's language self-corrects.
+  const hint = guessLangFromTitle(video.title);
+  if (hint) return { lang: hint, reason: 'title' };
   return null;
 }
 
