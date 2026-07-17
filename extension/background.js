@@ -28,10 +28,18 @@ chrome.runtime.onStartup.addListener(() => {
 // refresh. Self-heal: ping every YouTube tab and inject wherever nobody
 // answers. Runs on install AND on every minute tick, so a tab that missed
 // injection (discarded tab, failed install-time inject, …) recovers alone.
+const SERIES_SITE_PATTERNS = [
+  'https://gimytv.biz/*',
+  'https://*.netflix.com/*',
+  'https://*.disneyplus.com/*',
+];
+
 async function injectIntoOpenTabs() {
   let tabs = [];
+  let seriesTabs = [];
   try {
     tabs = await chrome.tabs.query({ url: 'https://www.youtube.com/*' });
+    seriesTabs = await chrome.tabs.query({ url: SERIES_SITE_PATTERNS });
   } catch {
     return;
   }
@@ -51,6 +59,18 @@ async function injectIntoOpenTabs() {
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['page-bridge.js'], world: 'MAIN' });
     } catch { /* tab not injectable (discarded, error page, …) */ }
+  }
+  for (const tab of seriesTabs) {
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'ping' });
+      continue;
+    } catch { /* no receiver — inject below */ }
+    try {
+      // allFrames: the metadata frame and the <video> frame differ on Gimy.
+      const target = { tabId: tab.id, allFrames: true };
+      await chrome.scripting.executeScript({ target, func: () => { delete window.__ecouteSeriesLoaded; } });
+      await chrome.scripting.executeScript({ target, files: ['series-detect.js'] });
+    } catch { /* tab not injectable */ }
   }
 }
 
@@ -130,6 +150,8 @@ async function handle(msg, sender) {
     // killed the instant it loses focus — e.g. clicking over to IMDb to
     // check an episode number mid-lookup. The worker survives that.
     case 'tmdb-lookup': return { info: await tmdbLookupEpisode(msg.name, msg.season, msg.episode) };
+    case 'series-heartbeat': return onSeriesHeartbeat(msg, sender);
+    case 'set-series-lang': return setSeriesLang(msg.name, msg.lang);
     default: return { error: 'unknown message: ' + msg.type };
   }
 }
@@ -215,6 +237,105 @@ async function finalizeCurrent() {
   return { ok: true };
 }
 
+/* ── Series accumulation (Gimy / Netflix / Disney+) ── */
+// Streaming players give no language signal (no ASR-caption trick like
+// YouTube), so time only counts once the user has pinned the series to a
+// language in the popup — the pin lives in storage.sync keyed by series
+// name, so it carries across devices and every later episode is automatic.
+// Seconds still accumulate while unpinned: a pin set mid-episode (or any
+// time before the idle finalize) rescues the whole sitting.
+async function onSeriesHeartbeat({ seconds, playing, meta }, sender) {
+  const tabId = sender && sender.tab ? sender.tab.id : null;
+  if (tabId === null) return {};
+
+  let { currentSeries = null } = await chrome.storage.local.get('currentSeries');
+  const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
+
+  if (meta && meta.name) {
+    const changed = currentSeries &&
+      (currentSeries.name !== meta.name || currentSeries.episode !== meta.episode);
+    if (changed) {
+      await finalizeSeries(currentSeries);
+      currentSeries = null;
+    }
+    if (!currentSeries) {
+      currentSeries = {
+        tabId,
+        site: meta.site,
+        name: meta.name,
+        season: meta.season,
+        episode: meta.episode,
+        epTitle: meta.epTitle || '',
+        date: todayKey(),
+        seconds: 0,
+        startedAt: Date.now(),
+      };
+    } else {
+      // Metadata can trickle in after playback starts (Netflix's title bar
+      // only exists once the controls have been shown) — keep enriching.
+      currentSeries.tabId = tabId;
+      if (meta.season != null) currentSeries.season = meta.season;
+      if (meta.epTitle) currentSeries.epTitle = meta.epTitle;
+    }
+  }
+
+  // Seconds arrive from whichever frame owns the <video> (Gimy's player is
+  // an iframe), which may not be the frame that sent the metadata — match
+  // on tab, not frame.
+  if (currentSeries && tabId === currentSeries.tabId && seconds > 0) {
+    currentSeries.seconds += seconds;
+    currentSeries.lastBeat = Date.now();
+  }
+  await chrome.storage.local.set({ currentSeries });
+
+  const lang = currentSeries ? seriesLangs[currentSeries.name] || null : null;
+  await updateBadge(lang, playing, sender);
+  return {
+    tracked: !!lang,
+    lang,
+    name: currentSeries ? currentSeries.name : null,
+    sessionSeconds: currentSeries ? currentSeries.seconds : 0,
+  };
+}
+
+async function finalizeSeries(series) {
+  await chrome.storage.local.set({ currentSeries: null });
+  if (!series || series.seconds < MIN_SESSION_SECONDS) return;
+  const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
+  const lang = seriesLangs[series.name];
+  if (!lang) return; // never pinned — dropped, popup is where pinning happens
+  const row = {
+    date: series.date,
+    seconds: series.seconds,
+    language: lang,
+    type: 'series',
+    title: series.epTitle || (series.episode ? `第${series.episode}集` : ''),
+    channel: series.name,
+    video_id: '',
+    source: 'auto',
+    season: series.season || null,
+    episode: series.episode || null,
+  };
+  try {
+    await sb.insertSession(row);
+  } catch (e) {
+    console.warn('Supabase insert failed, queuing:', e);
+    const { pendingRows = [] } = await chrome.storage.local.get('pendingRows');
+    pendingRows.push(row);
+    await chrome.storage.local.set({ pendingRows });
+  }
+}
+
+// lang: 'fr' | 'en' pins the series; null removes the pin.
+async function setSeriesLang(name, lang) {
+  if (!name) return { error: 'no series name' };
+  const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
+  if (lang) seriesLangs[name] = lang;
+  else delete seriesLangs[name];
+  await chrome.storage.sync.set({ seriesLangs });
+  return { ok: true };
+}
+
 // Write the pooled shorts listening as one row per language, then reset.
 async function flushShortsBuffer(buffer) {
   const { shortsBuffer = {} } = buffer ? { shortsBuffer: buffer } : await chrome.storage.local.get('shortsBuffer');
@@ -279,11 +400,15 @@ async function finalizeSession(session) {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== 'tick') return;
   injectIntoOpenTabs(); // self-heal tabs that lost/never got their scripts
-  const { currentSession, pendingRows = [], shortsBuffer = {} } =
-    await chrome.storage.local.get(['currentSession', 'pendingRows', 'shortsBuffer']);
+  const { currentSession, currentSeries, pendingRows = [], shortsBuffer = {} } =
+    await chrome.storage.local.get(['currentSession', 'currentSeries', 'pendingRows', 'shortsBuffer']);
 
   if (currentSession && Date.now() - (currentSession.lastBeat || 0) > IDLE_FINALIZE_MS) {
     await finalizeSession(currentSession);
+    setBadge(null);
+  }
+  if (currentSeries && Date.now() - (currentSeries.lastBeat || currentSeries.startedAt || 0) > IDLE_FINALIZE_MS) {
+    await finalizeSeries(currentSeries);
     setBadge(null);
   }
   // Shorts binge ended (no shorts heartbeat for 90s+) — flush the pool.
@@ -309,9 +434,10 @@ async function syncPending() {
 
 /* ── Popup queries & settings ────────────── */
 async function getTrackingStatus() {
-  const { currentSession = null, overrides = {}, trackedChannels = [], pendingRows = [] } =
-    await chrome.storage.local.get(['currentSession', 'overrides', 'trackedChannels', 'pendingRows']);
-  return { currentSession, overrides, trackedChannels, pendingCount: pendingRows.length };
+  const { currentSession = null, currentSeries = null, overrides = {}, trackedChannels = [], pendingRows = [] } =
+    await chrome.storage.local.get(['currentSession', 'currentSeries', 'overrides', 'trackedChannels', 'pendingRows']);
+  const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
+  return { currentSession, currentSeries, overrides, trackedChannels, seriesLangs, pendingCount: pendingRows.length };
 }
 
 // value: 'fr' | 'en' (track as that language) | false (never track)

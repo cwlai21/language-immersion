@@ -379,6 +379,18 @@ function sessionRow(rows) {
   icon.className = 'session-icon';
   icon.textContent = (TYPE_META[s.type] || TYPE_META.youtube).icon;
   li.appendChild(icon);
+  // Series rows upgrade the generic 📺 to the show's TMDB poster once it
+  // resolves; the emoji stays when there's no key, no match, or no artwork.
+  if (s.type === 'series' && s.channel) {
+    seriesPoster(s.channel).then((url) => {
+      if (!url) return;
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = '';
+      icon.textContent = '';
+      icon.appendChild(img);
+    });
+  }
 
   const info = document.createElement('div');
   info.className = 'session-info';
@@ -434,6 +446,15 @@ function sessionRow(rows) {
 }
 
 // Rows sharing a non-empty title + channel on the same day render as one item.
+// One in-flight/settled promise per series per page load — the list can
+// hold many rows of the same show, and tmdbShowPoster's storage cache is
+// still an async round-trip each call.
+const posterMemo = new Map();
+function seriesPoster(name) {
+  if (!posterMemo.has(name)) posterMemo.set(name, tmdbShowPoster(name));
+  return posterMemo.get(name);
+}
+
 function groupSameContent(sessions) {
   const byKey = new Map();
   for (const s of sessions) {

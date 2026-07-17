@@ -32,23 +32,50 @@ async function tmdbCacheSet(key, value) {
   await chrome.storage.local.set({ tmdbCache });
 }
 
-async function tmdbFindShowId(seriesName, apiKey) {
-  // "v2:" invalidates cache entries written before errors stopped being
-  // cached as permanent misses (see tmdbEpisodeInfo) — without it, a single
-  // transient failure from before this fix would silently block that show
-  // forever, surviving even an extension reload since storage.local isn't
-  // cleared by one.
-  const cacheKey = `v2:show:${seriesName.toLowerCase()}`;
+// Gimy-style names carry a season suffix (反恐特警組第八季) that would break
+// the TMDB search — query without it.
+function tmdbSearchName(seriesName) {
+  return seriesName.replace(/第[〇一二三四五六七八九十\d]+季/g, '').trim();
+}
+
+// Returns { id, poster } (poster = full image URL or null), cached forever.
+async function tmdbFindShow(seriesName, apiKey) {
+  // "v3:" invalidates cache entries from before errors stopped being cached
+  // as permanent misses and before posters were stored — storage.local
+  // survives extension reloads, so stale entries would otherwise block a
+  // show forever.
+  const cacheKey = `v3:show:${seriesName.toLowerCase()}`;
   const cached = await tmdbCacheGet(cacheKey);
   if (cached !== undefined) return cached;
 
-  const url = `${TMDB_BASE}/search/tv?api_key=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(seriesName)}`;
+  const url = `${TMDB_BASE}/search/tv?api_key=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(tmdbSearchName(seriesName))}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`TMDB search failed (${res.status})`);
   const data = await res.json();
-  const showId = (data.results && data.results[0]) ? data.results[0].id : null;
-  await tmdbCacheSet(cacheKey, showId);
-  return showId;
+  const hit = data.results && data.results[0];
+  const info = hit
+    ? { id: hit.id, poster: hit.poster_path ? `https://image.tmdb.org/t/p/w92${hit.poster_path}` : null }
+    : null;
+  await tmdbCacheSet(cacheKey, info);
+  return info;
+}
+
+async function tmdbFindShowId(seriesName, apiKey) {
+  const show = await tmdbFindShow(seriesName, apiKey);
+  return show ? show.id : null;
+}
+
+// Poster URL for a series name, or null (no key / no match / no artwork).
+// Never throws — callers use it for decoration only.
+async function tmdbShowPoster(seriesName) {
+  try {
+    const apiKey = await tmdbGetApiKey();
+    if (!apiKey || !seriesName) return null;
+    const show = await tmdbFindShow(seriesName, apiKey);
+    return show ? show.poster : null;
+  } catch {
+    return null;
+  }
 }
 
 async function tmdbEpisodeInfo(showId, season, episode, apiKey) {

@@ -258,6 +258,14 @@ body {
 .session-item:last-child { border-bottom: none; }
 
 .session-icon { font-size: 18px; }
+.session-icon img {
+  width: 24px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
 .session-info { flex: 1; min-width: 0; }
 .session-title {
   font-size: 14px;

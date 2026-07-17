@@ -76,6 +76,9 @@ const I18N = {
     lookupSearching: '🔎 Looking up episode…',
     lookupFound: '✓ Found:',
     lookupNotFound: '⚠ Episode not found — enter minutes manually.',
+    seriesDetected: 'Series detected — pick its language to start tracking',
+    seriesTrackedFr: '🇫🇷 Tracking this series',
+    seriesTrackedEn: '🇬🇧 Tracking this series',
   },
   fr: {
     tagline: "Suivi d'écoute français & anglais",
@@ -151,6 +154,9 @@ const I18N = {
     lookupSearching: "🔎 Recherche de l'épisode…",
     lookupFound: '✓ Trouvé :',
     lookupNotFound: "⚠ Épisode introuvable — entrez les minutes manuellement.",
+    seriesDetected: 'Série détectée — choisissez sa langue pour lancer le suivi',
+    seriesTrackedFr: '🇫🇷 Série suivie',
+    seriesTrackedEn: '🇬🇧 Série suivie',
   },
 };
 

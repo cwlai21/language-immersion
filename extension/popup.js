@@ -25,9 +25,12 @@ function fmtMinutes(mins) {
 }
 
 let pageStatus = null;   // { video, playing } from the content script
-let tracking = null;     // { currentSession, overrides, trackedChannels, pendingCount }
+let seriesStatus = null; // { meta, playing } from series-detect.js on streaming sites
+let tracking = null;     // { currentSession, currentSeries, overrides, trackedChannels, seriesLangs, pendingCount }
 let statsLang = 'fr';    // which language the quick stats show
 let statsRows = null;    // cached rows for the current stats window
+
+const SERIES_SITE_RE = /https:\/\/(gimytv\.biz|[^/]*\.netflix\.com|[^/]*\.disneyplus\.com)\//;
 
 function asrLanguage(video) {
   const asr = (video.asrLang || '').toLowerCase();
@@ -47,6 +50,12 @@ async function loadStatus() {
     } catch {
       pageStatus = null; // content script not loaded (e.g. extension just installed)
     }
+  } else if (tab && tab.url && SERIES_SITE_RE.test(tab.url)) {
+    try {
+      seriesStatus = await chrome.tabs.sendMessage(tab.id, { type: 'get-series-status' });
+    } catch {
+      seriesStatus = null;
+    }
   }
   renderStatus();
 }
@@ -59,11 +68,58 @@ function makeBtn(label, onClick, primary = false) {
   return b;
 }
 
+function renderSeriesStatus() {
+  const line = document.getElementById('statusLine');
+  const title = document.getElementById('statusTitle');
+  const sess = document.getElementById('statusSession');
+  const actions = document.getElementById('statusActions');
+  actions.innerHTML = '';
+
+  const meta = seriesStatus.meta;
+  const { seriesLangs = {}, currentSeries } = tracking || {};
+  const lang = seriesLangs[meta.name] || null;
+
+  if (lang) {
+    line.textContent = '🎧 ' + t(lang === 'fr' ? 'seriesTrackedFr' : 'seriesTrackedEn');
+    line.className = 'status-line on';
+  } else {
+    line.textContent = t('seriesDetected');
+    line.className = 'status-line off';
+  }
+  const ep = meta.episode ? ` · S${meta.season || 1}E${meta.episode}` : '';
+  title.textContent = `📺 ${meta.name}${ep}${meta.epTitle ? ' · ' + meta.epTitle : ''}`;
+
+  if (currentSeries && currentSeries.name === meta.name && currentSeries.seconds > 0) {
+    sess.textContent = `${fmtMinutes(currentSeries.seconds / 60)} ${t('thisSession')}`;
+  } else {
+    sess.textContent = '';
+  }
+
+  const setLang = (value) => async () => {
+    await chrome.runtime.sendMessage({ type: 'set-series-lang', name: meta.name, lang: value });
+    loadStatus();
+  };
+  if (lang) {
+    const other = lang === 'fr' ? 'en' : 'fr';
+    actions.appendChild(makeBtn(t(other === 'fr' ? 'trackAsFr' : 'trackAsEn'), setLang(other)));
+    actions.appendChild(makeBtn(t('dontTrackThis'), setLang(null)));
+  } else {
+    actions.appendChild(makeBtn(t('trackAsFr'), setLang('fr'), true));
+    actions.appendChild(makeBtn(t('trackAsEn'), setLang('en'), true));
+  }
+  actions.hidden = false;
+}
+
 function renderStatus() {
   const line = document.getElementById('statusLine');
   const title = document.getElementById('statusTitle');
   const sess = document.getElementById('statusSession');
   const actions = document.getElementById('statusActions');
+
+  if (seriesStatus && seriesStatus.meta) {
+    renderSeriesStatus();
+    return;
+  }
   actions.innerHTML = '';
 
   const video = pageStatus && pageStatus.video;
