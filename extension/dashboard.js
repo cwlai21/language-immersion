@@ -645,6 +645,21 @@ document.querySelectorAll('[data-langfilter]').forEach((pill) => {
   document.getElementById('goalInputFr').value = goals.fr;
   document.getElementById('goalInputEn').value = goals.en;
 
+  // Series posters need a TMDB key. The extension always has one
+  // (config.local.js or the popup-saved key), but the GitHub Pages copy
+  // can't — the key is personal and the repo is public — so offer a field
+  // there that stores it in this browser's localStorage via the shim.
+  const tmdbInput = document.getElementById('tmdbKeyInput');
+  tmdbInput.hidden = !!(await tmdbGetApiKey());
+  tmdbInput.addEventListener('change', async () => {
+    const key = tmdbInput.value.trim();
+    if (!key) return;
+    await tmdbSetApiKey(key);
+    tmdbInput.hidden = true;
+    posterMemo.clear();
+    render();
+  });
+
   try {
     await fetchSessions();
   } catch (e) {
