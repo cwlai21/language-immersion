@@ -283,8 +283,18 @@ async function finalizeCurrent() {
   const { currentSession } = await chrome.storage.local.get('currentSession');
   if (currentSession) await finalizeSession(currentSession);
   await chrome.storage.local.set({ currentSession: null });
-  setBadge(null);
+  await clearBadgeUnlessActive();
   return { ok: true };
+}
+
+// One context ending mustn't blank the badge another still owns — e.g.
+// closing a YouTube tab while a series plays elsewhere. Only clear when
+// nothing has counted seconds recently (45s > the 15s flush interval).
+async function clearBadgeUnlessActive() {
+  const { currentSession, currentSeries } =
+    await chrome.storage.local.get(['currentSession', 'currentSeries']);
+  const fresh = (s) => s && s.lastBeat && Date.now() - s.lastBeat < 45 * 1000;
+  if (!fresh(currentSession) && !fresh(currentSeries)) setBadge(null);
 }
 
 /* ── Series accumulation (Gimy / Netflix / Disney+) ── */
@@ -352,7 +362,18 @@ async function onSeriesHeartbeat({ seconds, playing, meta }, sender) {
 
   const pin = currentSeries ? seriesLangs[currentSeries.name] : null;
   const lang = pin === 'fr' || pin === 'en' ? pin : null;
-  await updateBadge(lang, playing, sender);
+  // Heartbeats arrive from two frames of the same tab: the <video> iframe
+  // (playing=true) and the metadata top frame (playing=false — it has no
+  // video). Letting the top frame clear the badge would undo the video
+  // frame's set every 15s, so a not-playing heartbeat only clears once the
+  // session has genuinely gone quiet (no counted seconds for 45s+; the
+  // video frame flushes every 15s while playing, and stays silent when
+  // paused).
+  if (playing) {
+    await updateBadge(lang, true, sender);
+  } else if (!currentSeries || !currentSeries.lastBeat || Date.now() - currentSeries.lastBeat > 45 * 1000) {
+    await updateBadge(lang, false, sender);
+  }
   return {
     tracked: !!lang,
     lang,
@@ -367,6 +388,17 @@ async function finalizeSeries(series) {
   const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
   const lang = seriesLangs[series.name];
   if (lang !== 'fr' && lang !== 'en') return; // unpinned or excluded (false) — dropped
+
+  // Gimy only exposes the episode number (第3集), not its title — ask TMDB
+  // for the real one before saving. Season defaults to 1: single-season
+  // shows usually carry no 第N季 marker, and a wrong guess just 404s into
+  // the cached-miss path, keeping the 第N集 fallback.
+  if (!series.epTitle && series.episode) {
+    try {
+      const info = await tmdbLookupEpisode(series.name, series.season || 1, series.episode);
+      if (info && info.title) series.epTitle = info.title;
+    } catch { /* lookup failed — keep the numeric fallback */ }
+  }
   const row = {
     date: series.date,
     seconds: series.seconds,
@@ -469,11 +501,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
   if (currentSession && Date.now() - (currentSession.lastBeat || 0) > IDLE_FINALIZE_MS) {
     await finalizeSession(currentSession);
-    setBadge(null);
+    await clearBadgeUnlessActive();
   }
   if (currentSeries && Date.now() - (currentSeries.lastBeat || currentSeries.startedAt || 0) > IDLE_FINALIZE_MS) {
     await finalizeSeries(currentSeries);
-    setBadge(null);
+    await clearBadgeUnlessActive();
   }
   // Shorts binge ended (no shorts heartbeat for 90s+) — flush the pool.
   if (shortsBuffer.date && Date.now() - (shortsBuffer.lastBeat || 0) > SHORTS_FLUSH_IDLE_MS) {
@@ -516,7 +548,7 @@ async function setOverride(videoId, value) {
   // Turning tracking off mid-session discards what was accumulated.
   if (!value && currentSession && currentSession.videoId === videoId) {
     await chrome.storage.local.set({ currentSession: null });
-    setBadge(null);
+    await clearBadgeUnlessActive();
   }
   await chrome.storage.local.set({ overrides });
   return { ok: true };
