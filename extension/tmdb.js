@@ -38,13 +38,14 @@ function tmdbSearchName(seriesName) {
   return seriesName.replace(/第[〇一二三四五六七八九十\d]+季/g, '').trim();
 }
 
-// Returns { id, poster } (poster = full image URL or null), cached forever.
+// Returns { id, poster, lang } (poster = full image URL or null, lang =
+// ISO 639-1 original language like 'en'/'fr'/'zh'), cached forever.
 async function tmdbFindShow(seriesName, apiKey) {
-  // "v3:" invalidates cache entries from before errors stopped being cached
-  // as permanent misses and before posters were stored — storage.local
-  // survives extension reloads, so stale entries would otherwise block a
-  // show forever.
-  const cacheKey = `v3:show:${seriesName.toLowerCase()}`;
+  // "v4:" invalidates cache entries from before the original language was
+  // stored (and, further back, before errors stopped being cached as
+  // permanent misses) — storage.local survives extension reloads, so stale
+  // entries would otherwise stick around forever.
+  const cacheKey = `v4:show:${seriesName.toLowerCase()}`;
   const cached = await tmdbCacheGet(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -54,10 +55,27 @@ async function tmdbFindShow(seriesName, apiKey) {
   const data = await res.json();
   const hit = data.results && data.results[0];
   const info = hit
-    ? { id: hit.id, poster: hit.poster_path ? `https://image.tmdb.org/t/p/w92${hit.poster_path}` : null }
+    ? {
+        id: hit.id,
+        poster: hit.poster_path ? `https://image.tmdb.org/t/p/w92${hit.poster_path}` : null,
+        lang: hit.original_language || null,
+      }
     : null;
   await tmdbCacheSet(cacheKey, info);
   return info;
+}
+
+// Original language of a series ('fr' | 'en' | other ISO code) or null.
+// Never throws — used to skip the manual language pin when TMDB knows.
+async function tmdbShowLanguage(seriesName) {
+  try {
+    const apiKey = await tmdbGetApiKey();
+    if (!apiKey || !seriesName) return null;
+    const show = await tmdbFindShow(seriesName, apiKey);
+    return show ? show.lang : null;
+  } catch {
+    return null;
+  }
 }
 
 async function tmdbFindShowId(seriesName, apiKey) {

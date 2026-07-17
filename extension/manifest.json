@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Écoute — Listening Tracker (FR/EN)",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Auto-detects French and English YouTube videos, tracks listening time to Supabase, with daily/weekly/monthly dashboards.",
 
   "permissions": [
@@ -57,7 +57,9 @@
       ],
       "js": ["series-detect.js"],
       "run_at": "document_idle",
-      "all_frames": true
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true
     }
   ]
 }

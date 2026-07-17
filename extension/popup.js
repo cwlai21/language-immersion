@@ -49,12 +49,16 @@ async function loadStatus() {
       pageStatus = await chrome.tabs.sendMessage(tab.id, { type: 'get-page-status' });
     } catch {
       pageStatus = null; // content script not loaded (e.g. extension just installed)
+      // Ask the worker to re-inject right away; the 5s refresh loop picks
+      // up the healed tab without the user having to reload the page.
+      chrome.runtime.sendMessage({ type: 'heal-tab', tabId: tab.id }).catch(() => {});
     }
   } else if (tab && tab.url && SERIES_SITE_RE.test(tab.url)) {
     try {
       seriesStatus = await chrome.tabs.sendMessage(tab.id, { type: 'get-series-status' });
     } catch {
       seriesStatus = null;
+      chrome.runtime.sendMessage({ type: 'heal-tab', tabId: tab.id }).catch(() => {});
     }
   }
   renderStatus();
@@ -77,11 +81,15 @@ function renderSeriesStatus() {
 
   const meta = seriesStatus.meta;
   const { seriesLangs = {}, currentSeries } = tracking || {};
-  const lang = seriesLangs[meta.name] || null;
+  const pin = seriesLangs[meta.name];
+  const lang = pin === 'fr' || pin === 'en' ? pin : null;
 
   if (lang) {
     line.textContent = '🎧 ' + t(lang === 'fr' ? 'seriesTrackedFr' : 'seriesTrackedEn');
     line.className = 'status-line on';
+  } else if (pin === false) {
+    line.textContent = t('excluded');
+    line.className = 'status-line off';
   } else {
     line.textContent = t('seriesDetected');
     line.className = 'status-line off';
@@ -102,7 +110,9 @@ function renderSeriesStatus() {
   if (lang) {
     const other = lang === 'fr' ? 'en' : 'fr';
     actions.appendChild(makeBtn(t(other === 'fr' ? 'trackAsFr' : 'trackAsEn'), setLang(other)));
-    actions.appendChild(makeBtn(t('dontTrackThis'), setLang(null)));
+    // false, not null: an explicit exclusion also blocks the TMDB
+    // original-language auto-pin from immediately re-tracking the show.
+    actions.appendChild(makeBtn(t('dontTrackThis'), setLang(false)));
   } else {
     actions.appendChild(makeBtn(t('trackAsFr'), setLang('fr'), true));
     actions.appendChild(makeBtn(t('trackAsEn'), setLang('en'), true));

@@ -21,6 +21,24 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create('tick', { periodInMinutes: 1 });
+  injectIntoOpenTabs(); // session-restored tabs shouldn't wait for the first tick
+});
+
+// Heal a tab the moment the user switches to it, instead of making them
+// wait out the minute tick (which read as "needs a manual refresh").
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return;
+  }
+  if (!tab.url) return;
+  if (/^https:\/\/(gimytv\.biz|[^/]*\.netflix\.com|[^/]*\.disneyplus\.com)\//.test(tab.url)) {
+    healSeriesTab(tabId);
+  } else if (tab.url.startsWith('https://www.youtube.com/')) {
+    healYouTubeTab(tabId);
+  }
 });
 
 // Content scripts only auto-inject into pages loaded AFTER the extension —
@@ -44,34 +62,65 @@ async function injectIntoOpenTabs() {
     return;
   }
   for (const tab of tabs) {
-    try {
-      await chrome.tabs.sendMessage(tab.id, { type: 'ping' });
-      continue; // scripts alive in this tab
-    } catch { /* no receiver — inject below */ }
-    try {
-      // The unresponsive script left its double-injection guard flag set on
-      // `window` (isolated + MAIN world each persist across an extension
-      // reload, even though the orphaned script's chrome.* calls are now
-      // dead). Clear both before re-injecting, or the fresh scripts would
-      // see the stale flag and silently no-op.
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => { delete window.__ecouteContentLoaded; } });
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: () => { delete window.__ecouteBridgeLoaded; } });
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['page-bridge.js'], world: 'MAIN' });
-    } catch { /* tab not injectable (discarded, error page, …) */ }
+    await healYouTubeTab(tab.id);
   }
   for (const tab of seriesTabs) {
-    try {
-      await chrome.tabs.sendMessage(tab.id, { type: 'ping' });
-      continue;
-    } catch { /* no receiver — inject below */ }
-    try {
-      // allFrames: the metadata frame and the <video> frame differ on Gimy.
-      const target = { tabId: tab.id, allFrames: true };
-      await chrome.scripting.executeScript({ target, func: () => { delete window.__ecouteSeriesLoaded; } });
-      await chrome.scripting.executeScript({ target, files: ['series-detect.js'] });
-    } catch { /* tab not injectable */ }
+    await healSeriesTab(tab.id);
   }
+}
+
+async function healYouTubeTab(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'ping' });
+    return; // scripts alive in this tab
+  } catch { /* no receiver — inject below */ }
+  try {
+    // The unresponsive script left its double-injection guard flag set on
+    // `window` (the MAIN world persists across an extension reload, even
+    // though the orphaned script's chrome.* calls are now dead). Clear the
+    // flags before re-injecting, or the fresh scripts would see the stale
+    // flag and silently no-op.
+    await chrome.scripting.executeScript({ target: { tabId }, func: () => { delete window.__ecouteContentLoaded; } });
+    await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: () => { delete window.__ecouteBridgeLoaded; } });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['page-bridge.js'], world: 'MAIN' });
+  } catch { /* tab not injectable (discarded, error page, …) */ }
+}
+
+// Frame-granular healing: a top-frame ping can't see that the <video>
+// iframe lost its script — Gimy tears the player frame down and recreates
+// it after ads, often as about:blank, which manifest URL matching never
+// re-injects. Probe every reachable frame for a live script (the flag is
+// only visible inside the current extension instance's isolated world, so
+// orphans from before a reload correctly probe as dead) and inject exactly
+// where it's missing.
+// Popup-triggered: it found the tab unresponsive and wants it fixed now.
+async function healTab(tabId) {
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return { ok: false };
+  }
+  if (tab.url && tab.url.startsWith('https://www.youtube.com/')) await healYouTubeTab(tabId);
+  else await healSeriesTab(tabId);
+  return { ok: true };
+}
+
+async function healSeriesTab(tabId) {
+  try {
+    const probes = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => window.__ecouteSeriesLoaded === true,
+    });
+    const dead = probes.filter((p) => !p.result).map((p) => p.frameId);
+    if (dead.length) {
+      await chrome.scripting.executeScript({
+        target: { tabId, frameIds: dead },
+        files: ['series-detect.js'],
+      });
+    }
+  } catch { /* tab not injectable (discarded, error page, …) */ }
 }
 
 /* ── Helpers ─────────────────────────────── */
@@ -152,6 +201,7 @@ async function handle(msg, sender) {
     case 'tmdb-lookup': return { info: await tmdbLookupEpisode(msg.name, msg.season, msg.episode) };
     case 'series-heartbeat': return onSeriesHeartbeat(msg, sender);
     case 'set-series-lang': return setSeriesLang(msg.name, msg.lang);
+    case 'heal-tab': return healTab(msg.tabId);
     default: return { error: 'unknown message: ' + msg.type };
   }
 }
@@ -288,7 +338,20 @@ async function onSeriesHeartbeat({ seconds, playing, meta }, sender) {
   }
   await chrome.storage.local.set({ currentSeries });
 
-  const lang = currentSeries ? seriesLangs[currentSeries.name] || null : null;
+  // Unpinned series (undefined — as opposed to false, the user's explicit
+  // "don't track"): ask TMDB for the show's original language and pin it
+  // automatically when it's one we track. Chinese/Korean/etc. shows stay
+  // unpinned so the popup keeps offering the manual choice.
+  if (currentSeries && seriesLangs[currentSeries.name] === undefined) {
+    const auto = await tmdbShowLanguage(currentSeries.name);
+    if (auto === 'fr' || auto === 'en') {
+      seriesLangs[currentSeries.name] = auto;
+      await chrome.storage.sync.set({ seriesLangs });
+    }
+  }
+
+  const pin = currentSeries ? seriesLangs[currentSeries.name] : null;
+  const lang = pin === 'fr' || pin === 'en' ? pin : null;
   await updateBadge(lang, playing, sender);
   return {
     tracked: !!lang,
@@ -303,7 +366,7 @@ async function finalizeSeries(series) {
   if (!series || series.seconds < MIN_SESSION_SECONDS) return;
   const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
   const lang = seriesLangs[series.name];
-  if (!lang) return; // never pinned — dropped, popup is where pinning happens
+  if (lang !== 'fr' && lang !== 'en') return; // unpinned or excluded (false) — dropped
   const row = {
     date: series.date,
     seconds: series.seconds,
@@ -326,12 +389,13 @@ async function finalizeSeries(series) {
   }
 }
 
-// lang: 'fr' | 'en' pins the series; null removes the pin.
+// lang: 'fr' | 'en' pins the series; false excludes it (and blocks the
+// TMDB auto-pin from re-applying); null forgets it entirely.
 async function setSeriesLang(name, lang) {
   if (!name) return { error: 'no series name' };
   const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
-  if (lang) seriesLangs[name] = lang;
-  else delete seriesLangs[name];
+  if (lang === null) delete seriesLangs[name];
+  else seriesLangs[name] = lang;
   await chrome.storage.sync.set({ seriesLangs });
   return { ok: true };
 }
