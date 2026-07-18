@@ -277,6 +277,17 @@ body {
 .session-meta { font-size: 12px; color: var(--muted); }
 .session-mins { font-weight: 700; font-size: 14px; color: var(--primary-dark); white-space: nowrap; }
 
+.session-check {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--primary-dark);
+}
+.session-item.done .session-title { text-decoration: line-through; }
+.session-item.done .session-info,
+.session-item.done .session-icon { opacity: 0.55; }
+
 .session-del {
   border: none;
   background: transparent;

@@ -86,6 +86,44 @@ async function removeSession(id) {
   render();
 }
 
+/* ── Watch todo state ─────────────────────── */
+// The session list doubles as a to-finish list: titled content groups across
+// days into one row with a checkbox, and unchecked ("still watching") rows
+// stay listed past the 7-day window until the user checks them off. State is
+// one kv_state row like the trip checklist: { groupKey: 'todo' | 'done' }.
+const WATCH_KEY = 'watch-todo';
+let watchState = {};
+
+async function loadWatchState() {
+  try {
+    const rows = await sbRequest(`kv_state?key=eq.${WATCH_KEY}&select=value`);
+    if (rows.length) watchState = JSON.parse(rows[0].value);
+  } catch {
+    try { watchState = JSON.parse(localStorage.getItem(WATCH_KEY)) || {}; } catch { watchState = {}; }
+  }
+}
+
+async function saveWatchState() {
+  localStorage.setItem(WATCH_KEY, JSON.stringify(watchState));
+  try {
+    await sbRequest('kv_state?on_conflict=key', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates' },
+      body: { key: WATCH_KEY, value: JSON.stringify(watchState), updated_at: new Date().toISOString() },
+    });
+  } catch { /* offline — localStorage keeps it until next save */ }
+}
+
+// Anki reviews are daily and never "complete", so they keep per-day rows.
+const TODO_TYPES = ['youtube', 'podcast', 'reading', 'series'];
+const normType = (s) => (TYPE_META[s.type] ? s.type : 'youtube');
+
+function watchKey(s) {
+  if (!s.title || !TODO_TYPES.includes(normType(s))) return null;
+  const ep = s.type === 'series' && s.season && s.episode ? `S${s.season}E${s.episode}` : '';
+  return `${sessionLang(s)}|${normType(s)}|${s.title}|${s.channel || ''}|${ep}`;
+}
+
 /* ── Aggregation (in minutes) ─────────────── */
 function minutesByDate(sessions) {
   const map = {};
@@ -375,6 +413,22 @@ function sessionRow(rows) {
   const li = document.createElement('li');
   li.className = 'session-item';
 
+  const k = watchKey(s);
+  if (k) {
+    if (watchState[k] === 'done') li.classList.add('done');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'session-check';
+    box.title = 'Done?';
+    box.checked = watchState[k] === 'done';
+    box.onchange = () => {
+      watchState[k] = box.checked ? 'done' : 'todo';
+      li.classList.toggle('done', box.checked);
+      saveWatchState();
+    };
+    li.appendChild(box);
+  }
+
   const icon = document.createElement('span');
   icon.className = 'session-icon';
   icon.textContent = (TYPE_META[s.type] || TYPE_META.youtube).icon;
@@ -400,8 +454,10 @@ function sessionRow(rows) {
   title.textContent = episodeTag + (s.title || t('untitled'));
   const meta = document.createElement('div');
   meta.className = 'session-meta';
-  const bits = [s.date];
-  const intervals = mergeIntervals(rows.map(sessionInterval).filter(Boolean));
+  const dates = [...new Set(rows.map((r) => r.date))].sort();
+  const bits = [dates.length > 1 ? `${dates[0]} → ${dates[dates.length - 1]}` : s.date];
+  // Clock ranges only make sense within a single day.
+  const intervals = dates.length > 1 ? [] : mergeIntervals(rows.map(sessionInterval).filter(Boolean));
   if (intervals.length) {
     bits.push(intervals.map(([a, b]) => `${hm(a)}–${hm(b)}`).join(', '));
   }
@@ -455,10 +511,12 @@ function seriesPoster(name) {
   return posterMemo.get(name);
 }
 
+// Todo-able content groups by title across days; anki keeps per-day rows;
+// untitled rows stay solo.
 function groupSameContent(sessions) {
   const byKey = new Map();
   for (const s of sessions) {
-    const k = s.title ? `${s.date}|${s.title}|${s.channel}` : `solo|${s.id}`;
+    const k = watchKey(s) || (s.title ? `${s.date}|${s.title}|${s.channel}` : `solo|${s.id}`);
     if (!byKey.has(k)) byKey.set(k, []);
     byKey.get(k).push(s);
   }
@@ -526,12 +584,36 @@ function renderSessionList() {
   cutoff.setDate(cutoff.getDate() - 6);
   const cutoffKey = dateKey(cutoff);
   const recent = filteredSessions().filter((s) => s.date >= cutoffKey);
-  empty.style.display = recent.length ? 'none' : 'block';
+
+  // Unfinished content stays on the list past the window until checked off.
+  const inWindow = new Set(recent.map((s) => s.id));
+  const pinned = filteredSessions().filter(
+    (s) => !inWindow.has(s.id) && watchState[watchKey(s)] === 'todo'
+  );
+  const shown = recent.concat(pinned);
+  empty.style.display = shown.length ? 'none' : 'block';
+
+  // New titled content starts as 'todo' so it survives the window later;
+  // entries whose sessions are all gone (deleted or checked off and aged
+  // out) are dropped. Only prune on the unfiltered view, where every
+  // language's sessions are present to vouch for their entries.
+  let dirty = false;
+  for (const s of recent) {
+    const k = watchKey(s);
+    if (k && !watchState[k]) { watchState[k] = 'todo'; dirty = true; }
+  }
+  if (langFilter === 'all') {
+    const live = new Set(shown.map(watchKey).filter(Boolean));
+    for (const k of Object.keys(watchState)) {
+      if (!live.has(k)) { delete watchState[k]; dirty = true; }
+    }
+  }
+  if (dirty) saveWatchState();
 
   // Language sections, then collapsible per-source groups inside each.
   const langs = langFilter === 'all' ? ['fr', 'en'] : [langFilter];
   for (const lang of langs) {
-    const ofLang = recent.filter((s) => sessionLang(s) === lang);
+    const ofLang = shown.filter((s) => sessionLang(s) === lang);
     if (!ofLang.length) continue;
 
     const header = document.createElement('li');
@@ -661,7 +743,7 @@ document.querySelectorAll('[data-langfilter]').forEach((pill) => {
   });
 
   try {
-    await fetchSessions();
+    await Promise.all([fetchSessions(), loadWatchState()]);
   } catch (e) {
     showError(e);
   }
