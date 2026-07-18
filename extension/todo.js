@@ -65,6 +65,22 @@ const SECTIONS = [
     ],
   },
   {
+    title: '⚓ Antibes Juan-les-Pins',
+    blurb: 'Entre Nice et Cannes: remparts grecs, port Vauban et musée Picasso.',
+    items: [
+      { id: 'ant-podcast', lang: 'fr', kind: '🎙️', title: 'Le podcast d’Antibes Juan-les-Pins — officiel',
+        desc: 'La ville se raconte: histoire, culture, interviews d’Antibois — sur Spotify/Apple, donc compté dans ton tracker.', url: 'https://open.spotify.com/show/11ntTLqnzqs5P9WQuSTKWi' },
+      { id: 'ant-ici', lang: 'fr', kind: '🎙️', title: '« Antibes : 2 500 ans d’histoire face à la mer » (Radio France)',
+        desc: 'Épisode de « 1000 raisons d’aimer la Côte d’Azur »: fondation grecque, fortifications, essor touristique.', url: 'https://www.ici.fr/emissions/1000-raisons-d-aimer-la-cote-d-azur/antibes-2-500-ans-d-histoire-face-a-la-mer-2506120' },
+      { id: 'ant-berzingue', lang: 'fr', kind: '▶️', title: 'L’histoire d’Antibes Juan-les-Pins… À toute berzingue !',
+        desc: 'Toute l’histoire en 5 min, débit rapide — bon défi de compréhension avant d’arriver.', url: 'https://www.youtube.com/watch?v=uviSD7iB1M4' },
+      { id: 'ant-adresses', lang: 'fr', kind: '▶️', title: 'Antibes, bienvenue sur la Côte d’Azur | Mes bonnes adresses',
+        desc: 'Une résidente partage ses bonnes adresses — à voir juste avant de partir pour noter des lieux.', url: 'https://www.youtube.com/watch?v=eeFycGv7kRk' },
+      { id: 'ant-paroles', lang: 'fr', kind: '🎙️', title: 'Paroles d’Antibois — témoignages d’habitants',
+        desc: 'Français authentique non scripté: des Antibois racontent leur ville et son histoire.', url: 'https://www.antibes-juanlespins.com/sorties-loisirs/antibes-ville-de-culture/la-culture-au-numerique/paroles-dantibois/1939-1945-la-seconde-guerre-mondiale/podcast' },
+    ],
+  },
+  {
     title: '🏰 Besançon',
     blurb: 'Vauban, l’horlogerie et le pays du Comté.',
     items: [
