@@ -594,8 +594,9 @@ function renderSessionList() {
   empty.style.display = shown.length ? 'none' : 'block';
 
   // New titled content starts as 'todo' so it survives the window later —
-  // except series episodes, which are logged manually as complete viewings,
-  // so they start 'done' (uncheck one to pin it as unfinished);
+  // except series episodes (logged manually as complete viewings) and
+  // Shorts binges (scrolled through, nothing to resume), which start
+  // 'done' (uncheck one to pin it as unfinished);
   // entries whose sessions are all gone (deleted or checked off and aged
   // out) are dropped. Only prune on the unfiltered view, where every
   // language's sessions are present to vouch for their entries.
@@ -603,7 +604,8 @@ function renderSessionList() {
   for (const s of recent) {
     const k = watchKey(s);
     if (k && !watchState[k]) {
-      watchState[k] = normType(s) === 'series' ? 'done' : 'todo';
+      const startsDone = normType(s) === 'series' || s.channel === 'Shorts';
+      watchState[k] = startsDone ? 'done' : 'todo';
       dirty = true;
     }
   }
