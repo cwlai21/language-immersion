@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Écoute — Listening Tracker (FR/EN)",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Auto-detects French and English YouTube videos, tracks listening time to Supabase, with daily/weekly/monthly dashboards.",
 
   "permissions": [
@@ -15,6 +15,7 @@
     "https://iusnuavugqjdaljgdcij.supabase.co/*",
     "https://api.themoviedb.org/*",
     "https://gimytv.biz/*",
+    "https://gimyai.tw/*",
     "https://*.netflix.com/*",
     "https://*.disneyplus.com/*"
   ],
@@ -53,6 +54,7 @@
     {
       "matches": [
         "https://gimytv.biz/*",
+        "https://gimyai.tw/*",
         "https://*.netflix.com/*",
         "https://*.disneyplus.com/*"
       ],

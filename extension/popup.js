@@ -30,7 +30,7 @@ let tracking = null;     // { currentSession, currentSeries, overrides, trackedC
 let statsLang = 'fr';    // which language the quick stats show
 let statsRows = null;    // cached rows for the current stats window
 
-const SERIES_SITE_RE = /https:\/\/(gimytv\.biz|[^/]*\.netflix\.com|[^/]*\.disneyplus\.com)\//;
+const SERIES_SITE_RE = /https:\/\/(gimytv\.biz|gimyai\.tw|[^/]*\.netflix\.com|[^/]*\.disneyplus\.com)\//;
 
 function asrLanguage(video) {
   const asr = (video.asrLang || '').toLowerCase();

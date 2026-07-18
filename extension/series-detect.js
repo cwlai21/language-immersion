@@ -113,7 +113,7 @@ function extractMeta() {
   if (!isTop) return null;
   const host = location.hostname;
   try {
-    if (host.includes('gimytv')) return gimyMeta();
+    if (host.includes('gimy')) return gimyMeta(); // gimytv.biz, gimyai.tw — the site hops domains
     if (host.includes('netflix')) return netflixMeta();
     if (host.includes('disneyplus')) return disneyMeta();
   } catch { /* site DOM changed — treat as no metadata */ }

@@ -35,7 +35,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
     return;
   }
   if (!tab.url) return;
-  if (/^https:\/\/(gimytv\.biz|[^/]*\.netflix\.com|[^/]*\.disneyplus\.com)\//.test(tab.url)) {
+  if (/^https:\/\/(gimytv\.biz|gimyai\.tw|[^/]*\.netflix\.com|[^/]*\.disneyplus\.com)\//.test(tab.url)) {
     healSeriesTab(tabId);
   } else if (tab.url.startsWith('https://www.youtube.com/')) {
     healYouTubeTab(tabId);
@@ -49,6 +49,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 // injection (discarded tab, failed install-time inject, …) recovers alone.
 const SERIES_SITE_PATTERNS = [
   'https://gimytv.biz/*',
+  'https://gimyai.tw/*',
   'https://*.netflix.com/*',
   'https://*.disneyplus.com/*',
 ];
