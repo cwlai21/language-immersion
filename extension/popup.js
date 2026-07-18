@@ -290,6 +290,8 @@ const mEpisode = document.getElementById('mEpisode');
 const mTmdbKey = document.getElementById('mTmdbKey');
 
 let seriesLookupTimer = null;
+let seriesLookupSeq = 0; // drop out-of-order lookup responses
+let autoFilledTitle = ''; // last title the lookup wrote, so a newer lookup may replace it
 
 async function refreshSeriesUi() {
   const isSeries = mType.value === 'series';
@@ -347,6 +349,7 @@ async function runSeriesLookup() {
   const episode = parseInt(mEpisode.value, 10);
   if (!name || !season || !episode) return;
   if (!(await tmdbGetApiKey())) return;
+  const seq = ++seriesLookupSeq;
 
   seriesLookupStatus.hidden = false;
   seriesLookupStatus.textContent = t('lookupSearching');
@@ -356,10 +359,18 @@ async function runSeriesLookup() {
     // instant it loses focus, e.g. clicking over to check an episode
     // number on IMDb mid-lookup.
     const { info, error } = await chrome.runtime.sendMessage({ type: 'tmdb-lookup', name, season, episode });
+    if (seq !== seriesLookupSeq) return; // superseded — e.g. E1 answered after E10
     if (error) throw new Error(error);
     if (info) {
       mMinutes.value = info.minutes;
-      if (!mTitle.value.trim() && info.title) mTitle.value = info.title;
+      // Fill the title when empty, and also replace a title *we* filled —
+      // typing "10" digit by digit fires a lookup for E1 whose title must
+      // not stick. Never touch a title the user typed themselves.
+      const cur = mTitle.value.trim();
+      if (info.title && (!cur || cur === autoFilledTitle)) {
+        mTitle.value = info.title;
+        autoFilledTitle = info.title;
+      }
       seriesLookupStatus.textContent = `${t('lookupFound')} ${info.minutes}m${info.title ? ' — ' + info.title : ''}`;
     } else {
       seriesLookupStatus.textContent = t('lookupNotFound');
@@ -402,6 +413,7 @@ document.getElementById('manualForm').addEventListener('submit', async (e) => {
     });
     mMinutes.value = '';
     mTitle.value = '';
+    autoFilledTitle = '';
     mSeriesName.value = '';
     mSeason.value = '';
     mEpisode.value = '';
