@@ -215,6 +215,28 @@ function monthlySeries(sessions, months = 12) {
 }
 
 /* ── Charts ───────────────────────────────── */
+// Dashed reference line at the goal, so goal attainment is readable by
+// position too, not by color alone.
+const goalLinePlugin = {
+  id: 'goalLine',
+  afterDatasetsDraw(chart) {
+    const value = chart.options.plugins.goalLine && chart.options.plugins.goalLine.value;
+    if (!value) return;
+    const { ctx, chartArea, scales } = chart;
+    const y = scales.y.getPixelForValue(value);
+    if (y < chartArea.top || y > chartArea.bottom) return;
+    ctx.save();
+    ctx.strokeStyle = '#6b7280';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(chartArea.left, y);
+    ctx.lineTo(chartArea.right, y);
+    ctx.stroke();
+    ctx.restore();
+  },
+};
+
 let mainChart = null;
 let typeChart = null;
 let currentView = 'daily';
@@ -235,6 +257,7 @@ function renderMainChart() {
   let labels;
   let stacked = false;
   let legend = { display: false };
+  let goalMet = null; // per-bar goal status, single-language daily/weekly only
   if (langFilter === 'all') {
     // Stacked bars: French + English per period.
     const fr = seriesFor(allSessions.filter((s) => sessionLang(s) === 'fr'));
@@ -248,37 +271,76 @@ function renderMainChart() {
     ];
   } else {
     // Single-language view: stack by source, matching the donut's colors.
+    // Days that met the goal keep full color; missed days are washed out
+    // (same hues, so the type identity survives). The dashed goal line and
+    // the ✓ on met days keep the status readable without color.
     const sessions = filteredSessions();
     const TYPE_COLORS = { youtube: '#ef4135', podcast: '#2b4fd8', anki: '#f59e0b', reading: '#8b5cf6', series: '#14b8a6' };
     stacked = true;
-    legend = { display: true };
-    datasets = [];
-    for (const type of Object.keys(TYPE_META)) {
-      const series = seriesFor(sessions.filter((s) => (TYPE_META[s.type] ? s.type : 'youtube') === type));
-      if (!labels) labels = series.labels;
-      datasets.push({
-        label: `${TYPE_META[type].icon} ${typeLabel(type)}`,
-        data: series.data,
-        backgroundColor: TYPE_COLORS[type],
-        borderRadius: 3,
-      });
-    }
+    const perType = Object.keys(TYPE_META).map((type) => ({
+      type,
+      series: seriesFor(sessions.filter((s) => (TYPE_META[s.type] ? s.type : 'youtube') === type)),
+    }));
+    // Per-day color arrays make Chart.js paint legend chips with day 1's
+    // color — pin them to the canonical type hues instead.
+    legend = {
+      display: true,
+      labels: {
+        generateLabels: (chart) => {
+          const items = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+          for (const it of items) {
+            const hue = TYPE_COLORS[perType[it.datasetIndex].type];
+            it.fillStyle = hue;
+            it.strokeStyle = hue;
+          }
+          return items;
+        },
+      },
+    };
+    labels = perType[0].series.labels;
+    goalMet = goalLine
+      ? labels.map((_, i) => perType.reduce((sum, p) => sum + p.series.data[i], 0) >= goalLine)
+      : null;
+    const faded = (hex) => hex + '59'; // same hue at ~35% alpha
+    datasets = perType.map(({ type, series }) => ({
+      label: `${TYPE_META[type].icon} ${typeLabel(type)}`,
+      data: series.data,
+      backgroundColor: goalMet
+        ? series.data.map((_, i) => (goalMet[i] ? TYPE_COLORS[type] : faded(TYPE_COLORS[type])))
+        : TYPE_COLORS[type],
+      borderRadius: 3,
+    }));
   }
 
+  const lineValue = langFilter !== 'all' ? goalLine : null;
   if (mainChart) mainChart.destroy();
   mainChart = new Chart(document.getElementById('mainChart'), {
     type: 'bar',
+    plugins: [goalLinePlugin],
     data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
         legend,
+        goalLine: { value: lineValue },
         title: { display: true, text: t(CHART_TITLES[currentView]), color: '#6b7280', font: { size: 12 } },
-        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtMinutes(ctx.parsed.y)}` } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${fmtMinutes(ctx.parsed.y)}`,
+            footer: (items) =>
+              goalMet ? (goalMet[items[0].dataIndex] ? `✓ ${t('goalMetTip')}` : `✗ ${t('goalMissTip')}`) : '',
+          },
+        },
       },
       scales: {
-        y: { beginAtZero: true, stacked, ticks: { precision: 0 }, grid: { color: '#eef0f6' } },
+        y: {
+          beginAtZero: true,
+          stacked,
+          suggestedMax: lineValue || undefined,
+          ticks: { precision: 0 },
+          grid: { color: '#eef0f6' },
+        },
         x: { stacked, grid: { display: false } },
       },
     },
