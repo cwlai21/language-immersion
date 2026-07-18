@@ -34,17 +34,26 @@ function chineseNumeral(s) {
 }
 
 function gimyMeta() {
-  // The history tracker span carries clean data attributes:
-  // <span class="mac_history_set2" data-name="百花殺" data-playname="第5集">
-  const el = document.querySelector('.mac_history_set2');
+  // The history tracker span carries clean data attributes, but its shape
+  // varies by domain generation:
+  //   gimytv.biz: <span class="mac_history_set2" data-name="百花殺" data-playname="第5集">
+  //   gimyai.tw:  <span class="mac_history_set hide" data-name="校園之外">  (no playname)
+  const el = document.querySelector('.mac_history_set2, .mac_history_set');
   let name = el && el.dataset.name;
   let playname = el && el.dataset.playname;
   if (!name) {
-    // Fallback: play pages are titled 「{name}線上看第{n}集 | Gimy」
-    const m = document.title.match(/^(.+?)線上看(第\d+集)?/);
+    // Title fallbacks: gimytv.biz uses 「{name}線上看第{n}集 | Gimy」,
+    // gimyai.tw uses 「{name} 第05集 - {線路} - Gimy TV 劇迷」.
+    const m = document.title.match(/^(.+?)線上看(第\d+集)?/) || document.title.match(/^(.+?)\s+(第\d+集)/);
     if (!m) return null;
     name = m[1].trim();
     playname = playname || m[2] || '';
+  }
+  if (!playname) {
+    // data-name without playname (gimyai.tw) — the episode only lives in
+    // the title.
+    const m = document.title.match(/第(\d+)集/);
+    if (m) playname = `第${m[1]}集`;
   }
   const seasonM = name.match(/第([〇一二三四五六七八九十\d]+)季/);
   const epM = (playname || '').match(/第(\d+)集/);
