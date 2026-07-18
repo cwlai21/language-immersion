@@ -593,14 +593,19 @@ function renderSessionList() {
   const shown = recent.concat(pinned);
   empty.style.display = shown.length ? 'none' : 'block';
 
-  // New titled content starts as 'todo' so it survives the window later;
+  // New titled content starts as 'todo' so it survives the window later —
+  // except series episodes, which are logged manually as complete viewings,
+  // so they start 'done' (uncheck one to pin it as unfinished);
   // entries whose sessions are all gone (deleted or checked off and aged
   // out) are dropped. Only prune on the unfiltered view, where every
   // language's sessions are present to vouch for their entries.
   let dirty = false;
   for (const s of recent) {
     const k = watchKey(s);
-    if (k && !watchState[k]) { watchState[k] = 'todo'; dirty = true; }
+    if (k && !watchState[k]) {
+      watchState[k] = normType(s) === 'series' ? 'done' : 'todo';
+      dirty = true;
+    }
   }
   if (langFilter === 'all') {
     const live = new Set(shown.map(watchKey).filter(Boolean));
