@@ -9,6 +9,7 @@ try {
 } catch { /* not present in this checkout, fine */ }
 
 const MIN_SESSION_SECONDS = 30;
+const TITLE_RETRIES = 3; // recovery attempts before an untitled row is dropped
 const IDLE_FINALIZE_MS = 3 * 60 * 1000;
 const SHORTS_FLUSH_IDLE_MS = 90 * 1000; // shorts pool flushes sooner
 const MAX_OVERRIDES = 100;
@@ -411,6 +412,7 @@ async function finalizeSeries(series) {
     season: series.season || null,
     episode: series.episode || null,
   };
+  if (!row.title) return queueUntitled(row);
   try {
     await sb.insertSession(row);
   } catch (e) {
@@ -482,6 +484,7 @@ async function finalizeSession(session) {
     video_id: session.videoId,
     source: 'auto',
   };
+  if (!row.title) return queueUntitled(row);
   try {
     await sb.insertSession(row);
   } catch (e) {
@@ -514,12 +517,57 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (pendingRows.length) await syncPending();
 });
 
+// Untitled rows are never stored: they park in the retry queue, where each
+// sync tick tries to recover a title (TITLE_RETRIES attempts) before the row
+// is dropped for good with a warning.
+async function queueUntitled(row) {
+  const { pendingRows = [] } = await chrome.storage.local.get('pendingRows');
+  pendingRows.push({ ...row, titleRetries: 0 });
+  await chrome.storage.local.set({ pendingRows });
+}
+
+async function recoverTitle(row) {
+  try {
+    if (row.type === 'youtube' && row.video_id) {
+      const watchUrl = `https://www.youtube.com/watch?v=${row.video_id}`;
+      const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(watchUrl)}&format=json`);
+      if (res.ok) return (await res.json()).title || '';
+    }
+    if (row.type === 'series' && row.episode) {
+      const info = await tmdbLookupEpisode(row.channel, row.season || 1, row.episode);
+      return (info && info.title) || `第${row.episode}集`;
+    }
+  } catch { /* transient — next tick retries */ }
+  return '';
+}
+
+function warnUntitledDrop(row) {
+  const msg = `${Math.round(row.seconds / 60)}m ${row.type} on ${row.date} — no title after ${TITLE_RETRIES} retries`;
+  console.warn(`Dropped untitled session: ${msg}`);
+  chrome.notifications?.create({
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: '⚠️ Écoute — untitled session dropped',
+    message: msg,
+  });
+}
+
 async function syncPending() {
   const { pendingRows = [] } = await chrome.storage.local.get('pendingRows');
   const remaining = [];
   for (const row of pendingRows) {
+    if (row.source === 'auto' && !row.title) {
+      row.title = await recoverTitle(row);
+      if (!row.title) {
+        row.titleRetries = (row.titleRetries || 0) + 1;
+        if (row.titleRetries >= TITLE_RETRIES) warnUntitledDrop(row); // dropped
+        else remaining.push(row);
+        continue;
+      }
+    }
+    const { titleRetries, ...clean } = row;
     try {
-      await sb.insertSession(row);
+      await sb.insertSession(clean);
     } catch {
       remaining.push(row);
     }

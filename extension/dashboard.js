@@ -530,7 +530,7 @@ function enterEditMode(li, s) {
   const title = document.createElement('input');
   title.className = 'input grow';
   title.value = s.title || '';
-  title.placeholder = t('titleOptional');
+  title.placeholder = t('titleRequired');
 
   const mins = document.createElement('input');
   mins.type = 'number';
@@ -553,6 +553,7 @@ function enterEditMode(li, s) {
   save.className = 'btn btn-primary';
   save.textContent = t('save');
   save.onclick = async () => {
+    if (!title.value.trim()) { title.focus(); return; } // title is mandatory
     save.disabled = true;
     try {
       await sb.updateSession(s.id, {

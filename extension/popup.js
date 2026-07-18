@@ -297,7 +297,7 @@ async function refreshSeriesUi() {
   seriesLookupStatus.hidden = !isSeries;
   // Distinct from the generic "Title" placeholder so it's never mistaken
   // for the series-name field above it.
-  mTitle.dataset.i18nPh = isSeries ? 'episodeTitlePh' : 'titleOptional';
+  mTitle.dataset.i18nPh = isSeries ? 'episodeTitlePh' : 'titleRequired';
   mTitle.placeholder = t(mTitle.dataset.i18nPh);
   if (!isSeries) return;
 
@@ -380,6 +380,9 @@ document.getElementById('manualForm').addEventListener('submit', async (e) => {
   const type = mType.value;
   const isSeries = type === 'series';
   if (isSeries && !mSeriesName.value.trim()) return;
+  // Untitled sessions are meant to be dropped — refuse to save one in the
+  // first place, whatever the type.
+  if (!mTitle.value.trim()) { mTitle.focus(); return; }
 
   const btn = e.target.querySelector('button[type=submit]');
   btn.disabled = true;
