@@ -31,6 +31,13 @@ window.addEventListener('yt-navigate-finish', () => {
 });
 
 function getVideoEl() {
+  // Shorts pages keep preloaded prev/next <video> elements in the DOM, so
+  // a bare querySelector often lands on a paused preload and playback
+  // never counts — scope to the active shorts player first.
+  if (location.pathname.startsWith('/shorts/')) {
+    const v = document.querySelector('#shorts-player video');
+    if (v) return v;
+  }
   return document.querySelector('video.html5-main-video') || document.querySelector('video');
 }
 

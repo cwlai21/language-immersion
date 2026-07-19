@@ -9,6 +9,10 @@ try {
 } catch { /* not present in this checkout, fine */ }
 
 const MIN_SESSION_SECONDS = 30;
+// The shorts pool has its own, lower floor: a single short listened almost
+// fully still only accumulates ~20-25s in 5s ticks, and the 30s session
+// floor was silently discarding it at flush time.
+const SHORTS_MIN_SECONDS = 15;
 const TITLE_RETRIES = 3; // recovery attempts before an untitled row is dropped
 const IDLE_FINALIZE_MS = 3 * 60 * 1000;
 const SHORTS_FLUSH_IDLE_MS = 90 * 1000; // shorts pool flushes sooner
@@ -441,7 +445,7 @@ async function flushShortsBuffer(buffer) {
   if (!shortsBuffer.date) return;
   for (const lang of ['fr', 'en']) {
     const seconds = shortsBuffer[lang] || 0;
-    if (seconds < MIN_SESSION_SECONDS) continue;
+    if (seconds < SHORTS_MIN_SECONDS) continue;
     // Name the pooled row after what was actually watched: top titles by time.
     const titles = Object.entries((shortsBuffer.titles || {})[lang] || {})
       .sort((a, b) => b[1] - a[1])
