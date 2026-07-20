@@ -4,9 +4,19 @@
 // workers unload at any time.
 
 importScripts('config.js', 'supabase.js', 'lang-detect.js', 'tmdb.js');
-try {
-  importScripts('config.local.js'); // git-ignored personal TMDB key — optional
-} catch { /* not present in this checkout, fine */ }
+// Optional personal TMDB key from git-ignored config.local.js. Don't
+// importScripts it: on checkouts without the file some Chrome versions fail
+// the whole service-worker registration ("An unknown error occurred when
+// fetching the script"), try/catch notwithstanding. Fetching the packaged
+// resource 404s harmlessly instead, and the key is pulled from the source
+// text (CSP forbids eval). tmdbGetApiKey() sees it via its typeof check.
+(async () => {
+  try {
+    const res = await fetch(chrome.runtime.getURL('config.local.js'));
+    const m = res.ok && (await res.text()).match(/TMDB_API_KEY\s*=\s*['"]([^'"]+)['"]/);
+    if (m) self.TMDB_API_KEY = m[1];
+  } catch { /* no local config in this checkout — the popup-saved key still works */ }
+})();
 
 const MIN_SESSION_SECONDS = 30;
 // The shorts pool has its own, lower floor: a single short listened almost
