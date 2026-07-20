@@ -657,10 +657,7 @@ function renderSessionList() {
   // New titled content starts as 'todo' so it survives the window later —
   // except series episodes (logged manually as complete viewings) and
   // Shorts binges (scrolled through, nothing to resume), which start
-  // 'done' (uncheck one to pin it as unfinished);
-  // entries whose sessions are all gone (deleted or checked off and aged
-  // out) are dropped. Only prune on the unfiltered view, where every
-  // language's sessions are present to vouch for their entries.
+  // 'done' (uncheck one to pin it as unfinished).
   let dirty = false;
   for (const s of recent) {
     const k = watchKey(s);
@@ -670,11 +667,13 @@ function renderSessionList() {
       dirty = true;
     }
   }
-  if (langFilter === 'all') {
-    const live = new Set(shown.map(watchKey).filter(Boolean));
-    for (const k of Object.keys(watchState)) {
-      if (!live.has(k)) { delete watchState[k]; dirty = true; }
-    }
+  // Forget entries whose sessions are all truly gone (deleted, not just
+  // scrolled out of the recent window — checking against every loaded
+  // session regardless of language filter or window keeps a 'done' mark
+  // intact until its content is actually deleted).
+  const live = new Set(allSessions.map(watchKey).filter(Boolean));
+  for (const k of Object.keys(watchState)) {
+    if (!live.has(k)) { delete watchState[k]; dirty = true; }
   }
   if (dirty) saveWatchState();
 
