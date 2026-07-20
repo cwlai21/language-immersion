@@ -643,9 +643,7 @@ function renderSessionList() {
   const list = document.getElementById('sessionList');
   const empty = document.getElementById('emptyMsg');
   list.innerHTML = '';
-  const cutoff = logicalNow();
-  cutoff.setDate(cutoff.getDate() - 6);
-  const cutoffKey = dateKey(cutoff);
+  const cutoffKey = dateKey(startOfWeek(logicalNow()));
   const recent = filteredSessions().filter((s) => s.date >= cutoffKey);
 
   // Unfinished content stays on the list past the window until checked off.
