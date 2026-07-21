@@ -13,20 +13,9 @@ const LANG_COLORS = { fr: 'rgba(43, 79, 216, 0.8)', en: 'rgba(22, 163, 74, 0.8)'
 const LANG_FLAGS = { fr: '🇫🇷', en: '🇬🇧' };
 
 /* ── Date helpers ─────────────────────────── */
-const pad = (n) => String(n).padStart(2, '0');
-const dateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-// The tracker's day starts at 4am (like Anki's rollover), so "today" and all
-// chart windows shift the clock back four hours.
-const ROLLOVER_HOUR = 4;
-const logicalNow = () => new Date(Date.now() - ROLLOVER_HOUR * 3600 * 1000);
-const todayKey = () => dateKey(logicalNow());
-
-function startOfWeek(d) {
-  const out = new Date(d);
-  out.setDate(out.getDate() - ((out.getDay() + 6) % 7));
-  out.setHours(0, 0, 0, 0);
-  return out;
-}
+// pad, dateKey, ROLLOVER_HOUR, logicalNow, todayKey, startOfWeek,
+// sessionLang, TODO_TYPES, normType and watchKey all live in rules.js,
+// loaded as a <script> tag before this file (see dashboard.html).
 
 function fmtMinutes(mins) {
   mins = Math.round(mins);
@@ -34,10 +23,6 @@ function fmtMinutes(mins) {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m ? `${h}h ${m}m` : `${h}h`;
-}
-
-function sessionLang(s) {
-  return s.language === 'en' ? 'en' : 'fr';
 }
 
 function filteredSessions() {
@@ -49,9 +34,8 @@ function currentGoal() {
   return langFilter === 'all' ? goals.fr + goals.en : goals[langFilter];
 }
 
-// On the "All" view the daily goal is only met once *both* languages have
-// individually reached their own goal — a big French session doesn't cover
-// for English (or vice versa).
+// Goal pass/fail math itself lives in rules.js (goalStatusAll/goalStatusSingle)
+// so it's covered by the Node test suite; this just gathers the inputs.
 function goalStatus(stats) {
   const tk = todayKey();
   if (langFilter === 'all') {
@@ -61,19 +45,9 @@ function goalStatus(stats) {
     const enToday = allSessions
       .filter((s) => s.date === tk && sessionLang(s) === 'en')
       .reduce((sum, s) => sum + s.seconds / 60, 0);
-    const frPct = goals.fr > 0 ? Math.min(1, frToday / goals.fr) : 1;
-    const enPct = goals.en > 0 ? Math.min(1, enToday / goals.en) : 1;
-    return {
-      done: frToday >= goals.fr && enToday >= goals.en,
-      pct: Math.min(frPct, enPct),
-      frToday, enToday,
-    };
+    return goalStatusAll(goals, frToday, enToday);
   }
-  const goal = goals[langFilter];
-  return {
-    done: stats.today >= goal,
-    pct: goal > 0 ? Math.min(1, stats.today / goal) : 1,
-  };
+  return goalStatusSingle(goals[langFilter], stats.today);
 }
 
 /* ── Data ─────────────────────────────────── */
@@ -142,15 +116,8 @@ async function saveGoals() {
   } catch { /* offline — chrome.storage.sync keeps it until next save */ }
 }
 
-// Anki reviews are daily and never "complete", so they keep per-day rows.
-const TODO_TYPES = ['youtube', 'podcast', 'reading', 'series'];
-const normType = (s) => (TYPE_META[s.type] ? s.type : 'youtube');
-
-function watchKey(s) {
-  if (!s.title || !TODO_TYPES.includes(normType(s))) return null;
-  const ep = s.type === 'series' && s.season && s.episode ? `S${s.season}E${s.episode}` : '';
-  return `${sessionLang(s)}|${normType(s)}|${s.title}|${s.channel || ''}|${ep}`;
-}
+// TODO_TYPES, normType and watchKey live in rules.js (KNOWN_TYPES there
+// matches TYPE_META's keys below).
 
 /* ── Aggregation (in minutes) ─────────────── */
 function minutesByDate(sessions) {
@@ -682,30 +649,12 @@ function renderSessionList() {
   const shown = recent.concat(pinned);
   empty.style.display = shown.length ? 'none' : 'block';
 
-  // New titled content starts as 'todo' so it survives the window later —
-  // except English series episodes (logged automatically as complete
-  // viewings) and Shorts binges (scrolled through, nothing to resume),
-  // which start 'done' (uncheck one to pin it as unfinished). French
-  // series stay 'todo' like everything else, since finishing an episode
-  // in the target language is worth actively checking off.
-  let dirty = false;
-  for (const s of recent) {
-    const k = watchKey(s);
-    if (k && !watchState[k]) {
-      const startsDone = (normType(s) === 'series' && sessionLang(s) === 'en') || s.channel === 'Shorts';
-      watchState[k] = startsDone ? 'done' : 'todo';
-      dirty = true;
-    }
-  }
-  // Forget entries whose sessions are all truly gone (deleted, not just
-  // scrolled out of the recent window — checking against every loaded
-  // session regardless of language filter or window keeps a 'done' mark
-  // intact until its content is actually deleted).
-  const live = new Set(allSessions.map(watchKey).filter(Boolean));
-  for (const k of Object.keys(watchState)) {
-    if (!live.has(k)) { delete watchState[k]; dirty = true; }
-  }
-  if (dirty) saveWatchState();
+  // Default-assignment and pruning rules live in rules.js (and are covered
+  // by the Node test suite) — this just applies them to the current state.
+  const assigned = assignDefaultStates(watchState, recent);
+  const pruned = pruneDeadKeys(assigned.state, allSessions);
+  watchState = pruned.state;
+  if (assigned.changed || pruned.changed) saveWatchState();
 
   // Language sections, then collapsible per-source groups inside each.
   const langs = langFilter === 'all' ? ['fr', 'en'] : [langFilter];

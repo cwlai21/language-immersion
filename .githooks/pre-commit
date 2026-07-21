@@ -1,0 +1,14 @@
+#!/bin/sh
+# Sanity check before every commit: the dashboard's pure decision logic
+# (window resets, watch-todo defaults/pruning, goal math) must pass its
+# Node test suite. Installed via `git config core.hooksPath .githooks`.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: node not found on PATH, skipping sanity tests" >&2
+  exit 0
+fi
+
+echo "pre-commit: running dashboard sanity tests..."
+node --test extension/test/*.test.js
