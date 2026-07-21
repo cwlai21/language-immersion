@@ -331,45 +331,14 @@ async function onSeriesHeartbeat({ seconds, playing, meta }, sender) {
   const tabId = sender && sender.tab ? sender.tab.id : null;
   if (tabId === null) return {};
 
-  const { seriesByTab = {} } = await chrome.storage.local.get('seriesByTab');
-  let currentSeries = seriesByTab[tabId] || null;
-  const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
-
-  if (meta && meta.name) {
-    if (seriesChanged(currentSeries, meta)) {
-      await finalizeSeries(currentSeries);
-      currentSeries = null;
-    }
-    if (!currentSeries) {
-      currentSeries = {
-        tabId,
-        site: meta.site,
-        name: meta.name,
-        season: meta.season,
-        episode: meta.episode,
-        epTitle: meta.epTitle || '',
-        date: todayKey(),
-        seconds: 0,
-        startedAt: Date.now(),
-      };
-    } else {
-      // Metadata can trickle in after playback starts (Netflix's title bar
-      // only exists once the controls have been shown) — keep enriching.
-      if (meta.season != null) currentSeries.season = meta.season;
-      if (meta.epTitle) currentSeries.epTitle = meta.epTitle;
-    }
-  }
-
-  // Seconds arrive from whichever frame owns the <video> (Gimy's player is
-  // an iframe), which may not be the frame that sent the metadata — both
-  // frames belong to this same tab, so either can contribute seconds.
-  if (currentSeries && seconds > 0) {
-    currentSeries.seconds += seconds;
-    currentSeries.lastBeat = Date.now();
-  }
-  if (currentSeries) seriesByTab[tabId] = currentSeries;
-  else delete seriesByTab[tabId];
+  const { seriesByTab: prevByTab = {} } = await chrome.storage.local.get('seriesByTab');
+  const { seriesByTab, finalized } =
+    applySeriesHeartbeat(prevByTab, tabId, meta, seconds, Date.now(), todayKey());
+  if (finalized) await finalizeSeries(finalized);
   await chrome.storage.local.set({ seriesByTab });
+  const currentSeries = seriesByTab[tabId] || null;
+
+  const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
 
   // Unpinned series (undefined — as opposed to false, the user's explicit
   // "don't track"): ask TMDB for the show's original language and pin it
