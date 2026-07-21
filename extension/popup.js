@@ -42,7 +42,7 @@ function asrLanguage(video) {
 /* ── Current video status ─────────────────── */
 async function loadStatus() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  tracking = await chrome.runtime.sendMessage({ type: 'get-tracking-status' });
+  tracking = await chrome.runtime.sendMessage({ type: 'get-tracking-status', tabId: tab ? tab.id : null });
 
   if (tab && tab.url && (tab.url.includes('youtube.com/watch') || tab.url.includes('youtube.com/shorts'))) {
     try {

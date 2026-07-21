@@ -206,7 +206,7 @@ async function handle(msg, sender) {
   switch (msg.type) {
     case 'heartbeat':   return onHeartbeat(msg, sender);
     case 'left-video':  return finalizeCurrent();
-    case 'get-tracking-status': return getTrackingStatus();
+    case 'get-tracking-status': return getTrackingStatus(msg.tabId);
     case 'set-override': return setOverride(msg.videoId, msg.value);
     case 'toggle-channel': return toggleChannel(msg.channelId, msg.channel, msg.lang);
     case 'sync-now': return syncPending();
@@ -307,10 +307,10 @@ async function finalizeCurrent() {
 // closing a YouTube tab while a series plays elsewhere. Only clear when
 // nothing has counted seconds recently (45s > the 15s flush interval).
 async function clearBadgeUnlessActive() {
-  const { currentSession, currentSeries } =
-    await chrome.storage.local.get(['currentSession', 'currentSeries']);
+  const { currentSession, seriesByTab = {} } =
+    await chrome.storage.local.get(['currentSession', 'seriesByTab']);
   const fresh = (s) => s && s.lastBeat && Date.now() - s.lastBeat < 45 * 1000;
-  if (!fresh(currentSession) && !fresh(currentSeries)) setBadge(null);
+  if (!fresh(currentSession) && !Object.values(seriesByTab).some(fresh)) setBadge(null);
 }
 
 /* ── Series accumulation (Gimy / Netflix / Disney+) ── */
@@ -320,19 +320,23 @@ async function clearBadgeUnlessActive() {
 // name, so it carries across devices and every later episode is automatic.
 // Seconds still accumulate while unpinned: a pin set mid-episode (or any
 // time before the idle finalize) rescues the whole sitting.
+//
+// Tracked per tab (seriesByTab, keyed by tabId) rather than as one global
+// slot — a global slot meant that watching one show while a second series
+// tab merely sat open (its own 15s heartbeats still firing, paused or not)
+// made every heartbeat from either tab look like "the show changed",
+// finalizing-and-restarting both continuously and fragmenting real
+// viewing into dozens of sub-minute rows.
 async function onSeriesHeartbeat({ seconds, playing, meta }, sender) {
   const tabId = sender && sender.tab ? sender.tab.id : null;
   if (tabId === null) return {};
 
-  let { currentSeries = null } = await chrome.storage.local.get('currentSeries');
+  const { seriesByTab = {} } = await chrome.storage.local.get('seriesByTab');
+  let currentSeries = seriesByTab[tabId] || null;
   const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
 
   if (meta && meta.name) {
     if (seriesChanged(currentSeries, meta)) {
-      console.log('[ecoute] finalizing series (episode/show changed):', {
-        from: currentSeries && { name: currentSeries.name, episode: currentSeries.episode, seconds: currentSeries.seconds },
-        to: { name: meta.name, episode: meta.episode },
-      });
       await finalizeSeries(currentSeries);
       currentSeries = null;
     }
@@ -351,20 +355,21 @@ async function onSeriesHeartbeat({ seconds, playing, meta }, sender) {
     } else {
       // Metadata can trickle in after playback starts (Netflix's title bar
       // only exists once the controls have been shown) — keep enriching.
-      currentSeries.tabId = tabId;
       if (meta.season != null) currentSeries.season = meta.season;
       if (meta.epTitle) currentSeries.epTitle = meta.epTitle;
     }
   }
 
   // Seconds arrive from whichever frame owns the <video> (Gimy's player is
-  // an iframe), which may not be the frame that sent the metadata — match
-  // on tab, not frame.
-  if (currentSeries && tabId === currentSeries.tabId && seconds > 0) {
+  // an iframe), which may not be the frame that sent the metadata — both
+  // frames belong to this same tab, so either can contribute seconds.
+  if (currentSeries && seconds > 0) {
     currentSeries.seconds += seconds;
     currentSeries.lastBeat = Date.now();
   }
-  await chrome.storage.local.set({ currentSeries });
+  if (currentSeries) seriesByTab[tabId] = currentSeries;
+  else delete seriesByTab[tabId];
+  await chrome.storage.local.set({ seriesByTab });
 
   // Unpinned series (undefined — as opposed to false, the user's explicit
   // "don't track"): ask TMDB for the show's original language and pin it
@@ -400,8 +405,9 @@ async function onSeriesHeartbeat({ seconds, playing, meta }, sender) {
   };
 }
 
+// Callers own removing this series from seriesByTab (they know which tab
+// it belonged to); this only handles saving the finished row.
 async function finalizeSeries(series) {
-  await chrome.storage.local.set({ currentSeries: null });
   if (!series || series.seconds < MIN_SESSION_SECONDS) return;
   const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
   const lang = seriesLangs[series.name];
@@ -516,21 +522,23 @@ async function finalizeSession(session) {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== 'tick') return;
   injectIntoOpenTabs(); // self-heal tabs that lost/never got their scripts
-  const { currentSession, currentSeries, pendingRows = [], shortsBuffer = {} } =
-    await chrome.storage.local.get(['currentSession', 'currentSeries', 'pendingRows', 'shortsBuffer']);
+  const { currentSession, seriesByTab = {}, pendingRows = [], shortsBuffer = {} } =
+    await chrome.storage.local.get(['currentSession', 'seriesByTab', 'pendingRows', 'shortsBuffer']);
 
   if (currentSession && Date.now() - (currentSession.lastBeat || 0) > IDLE_FINALIZE_MS) {
     await finalizeSession(currentSession);
     await clearBadgeUnlessActive();
   }
-  if (currentSeries && Date.now() - (currentSeries.lastBeat || currentSeries.startedAt || 0) > IDLE_FINALIZE_MS) {
-    console.log('[ecoute] finalizing series (idle timeout):', {
-      name: currentSeries.name, episode: currentSeries.episode, seconds: currentSeries.seconds,
-      idleMs: Date.now() - (currentSeries.lastBeat || currentSeries.startedAt || 0),
-    });
-    await finalizeSeries(currentSeries);
-    await clearBadgeUnlessActive();
+  let seriesByTabChanged = false;
+  for (const [tabId, currentSeries] of Object.entries(seriesByTab)) {
+    if (Date.now() - (currentSeries.lastBeat || currentSeries.startedAt || 0) > IDLE_FINALIZE_MS) {
+      await finalizeSeries(currentSeries);
+      delete seriesByTab[tabId];
+      seriesByTabChanged = true;
+      await clearBadgeUnlessActive();
+    }
   }
+  if (seriesByTabChanged) await chrome.storage.local.set({ seriesByTab });
   // Shorts binge ended (no shorts heartbeat for 90s+) — flush the pool.
   if (shortsBuffer.date && Date.now() - (shortsBuffer.lastBeat || 0) > SHORTS_FLUSH_IDLE_MS) {
     await flushShortsBuffer(shortsBuffer);
@@ -598,9 +606,14 @@ async function syncPending() {
 }
 
 /* ── Popup queries & settings ────────────── */
-async function getTrackingStatus() {
-  const { currentSession = null, currentSeries = null, overrides = {}, trackedChannels = [], pendingRows = [] } =
-    await chrome.storage.local.get(['currentSession', 'currentSeries', 'overrides', 'trackedChannels', 'pendingRows']);
+// tabId identifies which tab's own series-tracking slot to report — the
+// popup passes the active tab it queried get-series-status for, so it
+// shows that tab's session time even while a different series tab is
+// also open and counting independently.
+async function getTrackingStatus(tabId) {
+  const { currentSession = null, seriesByTab = {}, overrides = {}, trackedChannels = [], pendingRows = [] } =
+    await chrome.storage.local.get(['currentSession', 'seriesByTab', 'overrides', 'trackedChannels', 'pendingRows']);
+  const currentSeries = tabId != null ? (seriesByTab[tabId] || null) : null;
   const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
   return { currentSession, currentSeries, overrides, trackedChannels, seriesLangs, pendingCount: pendingRows.length };
 }
