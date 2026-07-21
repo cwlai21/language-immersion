@@ -43,13 +43,12 @@ function watchKey(s) {
 }
 
 // New titled content starts as 'todo' so it survives the window later —
-// except English series episodes (logged automatically as complete
-// viewings) and Shorts binges (scrolled through, nothing to resume), which
-// start 'done' (uncheck one to pin it as unfinished). French series stay
-// 'todo' like everything else, since finishing an episode in the target
-// language is worth actively checking off.
+// except Shorts binges (scrolled through, nothing to resume), which start
+// 'done' (uncheck one to pin it as unfinished). Series episodes, in either
+// language, stay 'todo' like everything else: finishing an episode is
+// worth actively checking off, English included.
 function startsDone(s) {
-  return (normType(s) === 'series' && sessionLang(s) === 'en') || s.channel === 'Shorts';
+  return s.channel === 'Shorts';
 }
 
 // ── Watch-todo state transitions ────────────

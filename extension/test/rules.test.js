@@ -69,11 +69,8 @@ test('watchKey is null for untitled content', () => {
 });
 
 /* ── startsDone: which new items auto-complete ── */
-test('English series episodes start done', () => {
-  assert.equal(startsDone({ language: 'en', type: 'series', title: 'x', channel: 'c' }), true);
-});
-
-test('French series episodes start todo, not done', () => {
+test('series episodes start todo in either language — no auto-complete', () => {
+  assert.equal(startsDone({ language: 'en', type: 'series', title: 'x', channel: 'c' }), false);
   assert.equal(startsDone({ language: 'fr', type: 'series', title: 'x', channel: 'c' }), false);
 });
 
@@ -87,18 +84,45 @@ test('ordinary youtube/podcast/reading content starts todo in either language', 
   assert.equal(startsDone({ language: 'fr', type: 'podcast', title: 'x', channel: 'c' }), false);
 });
 
+/* ── manually-timed reading sessions (no auto-detection exists for
+ * physical/e-reader reading, so every reading session is logged by hand) ── */
+test('manual reading sessions get a checklist key and start todo, in either language', () => {
+  const fr = { language: 'fr', type: 'reading', title: 'Le Petit Prince ch3', source: 'manual' };
+  const en = { language: 'en', type: 'reading', title: 'The One Thing ch16', source: 'manual' };
+  assert.equal(watchKey(fr), 'fr|reading|Le Petit Prince ch3||');
+  assert.equal(watchKey(en), 'en|reading|The One Thing ch16||');
+  assert.equal(startsDone(fr), false);
+  assert.equal(startsDone(en), false);
+});
+
+/* ── Apple/Spotify podcast sessions (auto-tracked by the separate podcast
+ * trackers, not the extension — source is 'apple'/'spotify'/'timer' rather
+ * than 'auto', but that shouldn't change checklist behavior) ── */
+test('Apple and Spotify podcast sessions get a checklist key and start todo, in either language', () => {
+  const apple = { language: 'fr', type: 'podcast', title: 'Tony Parker et le proto Brad Pitt', channel: 'Small Talk - Konbini', source: 'apple' };
+  const spotify = { language: 'en', type: 'podcast', title: 'Some Episode', channel: 'Some Show', source: 'spotify' };
+  const timer = { language: 'en', type: 'podcast', title: 'Timed Episode', channel: 'Some Show', source: 'timer' };
+  assert.equal(watchKey(apple), 'fr|podcast|Tony Parker et le proto Brad Pitt|Small Talk - Konbini|');
+  assert.equal(watchKey(spotify), 'en|podcast|Some Episode|Some Show|');
+  assert.equal(startsDone(apple), false);
+  assert.equal(startsDone(spotify), false);
+  assert.equal(startsDone(timer), false);
+});
+
 /* ── assignDefaultStates: fill gaps, never clobber existing state ── */
 test('assignDefaultStates only fills missing keys and respects the startsDone rule', () => {
   const recent = [
     { language: 'fr', type: 'series', title: 'Ep1', channel: 'Show' },
     { language: 'en', type: 'series', title: 'Ep1', channel: 'Show' },
+    { language: 'fr', type: 'youtube', title: 'Shorts binge', channel: 'Shorts' },
     { language: 'fr', type: 'youtube', title: 'Already done', channel: 'c' },
   ];
   const existing = { 'fr|youtube|Already done|c|': 'done' };
   const { state, changed } = assignDefaultStates(existing, recent);
   assert.equal(changed, true);
   assert.equal(state['fr|series|Ep1|Show|'], 'todo');
-  assert.equal(state['en|series|Ep1|Show|'], 'done');
+  assert.equal(state['en|series|Ep1|Show|'], 'todo');
+  assert.equal(state['fr|youtube|Shorts binge|Shorts|'], 'done');
   assert.equal(state['fr|youtube|Already done|c|'], 'done'); // untouched
 });
 
