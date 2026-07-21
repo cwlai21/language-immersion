@@ -329,6 +329,10 @@ async function onSeriesHeartbeat({ seconds, playing, meta }, sender) {
 
   if (meta && meta.name) {
     if (seriesChanged(currentSeries, meta)) {
+      console.log('[ecoute] finalizing series (episode/show changed):', {
+        from: currentSeries && { name: currentSeries.name, episode: currentSeries.episode, seconds: currentSeries.seconds },
+        to: { name: meta.name, episode: meta.episode },
+      });
       await finalizeSeries(currentSeries);
       currentSeries = null;
     }
@@ -520,6 +524,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await clearBadgeUnlessActive();
   }
   if (currentSeries && Date.now() - (currentSeries.lastBeat || currentSeries.startedAt || 0) > IDLE_FINALIZE_MS) {
+    console.log('[ecoute] finalizing series (idle timeout):', {
+      name: currentSeries.name, episode: currentSeries.episode, seconds: currentSeries.seconds,
+      idleMs: Date.now() - (currentSeries.lastBeat || currentSeries.startedAt || 0),
+    });
     await finalizeSeries(currentSeries);
     await clearBadgeUnlessActive();
   }
