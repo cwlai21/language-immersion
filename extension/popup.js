@@ -257,7 +257,14 @@ async function renderStats() {
   document.getElementById('qsWeek').textContent = fmtMinutes(week);
   document.getElementById('qsMonth').textContent = fmtMinutes(month);
 
-  const { goals = { fr: 30, en: 30 } } = await chrome.storage.sync.get('goals');
+  // Supabase is the source of truth (same key the dashboards use) so a goal
+  // changed from either dashboard shows up here too, not just chrome.storage.sync.
+  let goals;
+  try {
+    const rows = await sbRequest('kv_state?key=eq.daily-goals&select=value');
+    goals = rows.length ? JSON.parse(rows[0].value) : null;
+  } catch { goals = null; }
+  if (!goals) ({ goals = { fr: 30, en: 30 } } = await chrome.storage.sync.get('goals'));
   const goal = goals[statsLang] || 30;
   const pct = Math.min(100, Math.round((today / goal) * 100));
   const fill = document.getElementById('goalFill');

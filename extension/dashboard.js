@@ -1,6 +1,9 @@
-/* Dashboard page: sessions live in Supabase (listening_sessions), settings in
- * chrome.storage.sync. A language filter (All / FR / EN) drives all stats and
- * charts; the "All" view stacks French and English in the bar chart. */
+/* Dashboard page: sessions live in Supabase (listening_sessions). Goals sync
+ * through Supabase (kv_state) so the extension and the GitHub Pages copy —
+ * which can't see each other's chrome.storage.sync — agree; chrome.storage.sync
+ * is kept only as an offline cache inside the extension. A language filter
+ * (All / FR / EN) drives all stats and charts; the "All" view stacks French
+ * and English in the bar chart. */
 
 let allSessions = []; // [{ id, date, seconds, language, type, title, channel, source, created_at }]
 let goals = { fr: 30, en: 30 };
@@ -112,6 +115,31 @@ async function saveWatchState() {
       body: { key: WATCH_KEY, value: JSON.stringify(watchState), updated_at: new Date().toISOString() },
     });
   } catch { /* offline — localStorage keeps it until next save */ }
+}
+
+/* ── Goals ────────────────────────────────── */
+// Supabase is the source of truth so the extension and the GitHub Pages copy
+// (no access to each other's chrome.storage.sync) show the same goal.
+const GOALS_KEY = 'daily-goals';
+
+async function loadGoals() {
+  try {
+    const rows = await sbRequest(`kv_state?key=eq.${GOALS_KEY}&select=value`);
+    if (rows.length) return JSON.parse(rows[0].value);
+  } catch { /* offline — fall back to this browser's last-known goals */ }
+  const { goals: cached } = await chrome.storage.sync.get('goals');
+  return cached || {};
+}
+
+async function saveGoals() {
+  await chrome.storage.sync.set({ goals });
+  try {
+    await sbRequest('kv_state?on_conflict=key', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates' },
+      body: { key: GOALS_KEY, value: JSON.stringify(goals), updated_at: new Date().toISOString() },
+    });
+  } catch { /* offline — chrome.storage.sync keeps it until next save */ }
 }
 
 // Anki reviews are daily and never "complete", so they keep per-day rows.
@@ -756,7 +784,7 @@ function wireGoalInput(id, key) {
     const v = parseInt(input.value, 10);
     if (v >= 5) {
       goals[key] = v;
-      await chrome.storage.sync.set({ goals });
+      await saveGoals();
       render();
     }
   });
@@ -789,8 +817,7 @@ document.querySelectorAll('[data-langfilter]').forEach((pill) => {
 (async function init() {
   applyI18n();
 
-  const { goals: savedGoals } = await chrome.storage.sync.get('goals');
-  if (savedGoals) goals = { fr: 30, en: 30, ...savedGoals };
+  goals = { fr: 30, en: 30, ...(await loadGoals()) };
   document.getElementById('goalInputFr').value = goals.fr;
   document.getElementById('goalInputEn').value = goals.en;
 
