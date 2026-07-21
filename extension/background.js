@@ -3,7 +3,7 @@
 // offline retry queue). All state lives in chrome.storage.local because MV3
 // workers unload at any time.
 
-importScripts('config.js', 'supabase.js', 'lang-detect.js', 'tmdb.js');
+importScripts('config.js', 'supabase.js', 'lang-detect.js', 'tmdb.js', 'series-rules.js');
 // Optional personal TMDB key from git-ignored config.local.js. Don't
 // importScripts it: on checkouts without the file some Chrome versions fail
 // the whole service-worker registration ("An unknown error occurred when
@@ -328,9 +328,7 @@ async function onSeriesHeartbeat({ seconds, playing, meta }, sender) {
   const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
 
   if (meta && meta.name) {
-    const changed = currentSeries &&
-      (currentSeries.name !== meta.name || currentSeries.episode !== meta.episode);
-    if (changed) {
+    if (seriesChanged(currentSeries, meta)) {
       await finalizeSeries(currentSeries);
       currentSeries = null;
     }
