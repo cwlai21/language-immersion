@@ -683,14 +683,16 @@ function renderSessionList() {
   empty.style.display = shown.length ? 'none' : 'block';
 
   // New titled content starts as 'todo' so it survives the window later —
-  // except series episodes (logged manually as complete viewings) and
-  // Shorts binges (scrolled through, nothing to resume), which start
-  // 'done' (uncheck one to pin it as unfinished).
+  // except English series episodes (logged automatically as complete
+  // viewings) and Shorts binges (scrolled through, nothing to resume),
+  // which start 'done' (uncheck one to pin it as unfinished). French
+  // series stay 'todo' like everything else, since finishing an episode
+  // in the target language is worth actively checking off.
   let dirty = false;
   for (const s of recent) {
     const k = watchKey(s);
     if (k && !watchState[k]) {
-      const startsDone = normType(s) === 'series' || s.channel === 'Shorts';
+      const startsDone = (normType(s) === 'series' && sessionLang(s) === 'en') || s.channel === 'Shorts';
       watchState[k] = startsDone ? 'done' : 'todo';
       dirty = true;
     }
