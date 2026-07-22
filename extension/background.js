@@ -177,12 +177,18 @@ function trackDecision(video, overrides, trackedChannels) {
 async function updateBadge(lang, playing, sender) {
   const tabId = sender && sender.tab ? sender.tab.id : null;
   if (lang && playing) {
+    console.log('[ecoute] badge: SET', { lang, tabId });
     setBadge(lang);
     await chrome.storage.local.set({ badgeOwner: tabId });
     return;
   }
   const { badgeOwner = null } = await chrome.storage.local.get('badgeOwner');
-  if (badgeOwner === null || badgeOwner === tabId) setBadge(null);
+  if (badgeOwner === null || badgeOwner === tabId) {
+    console.log('[ecoute] badge: CLEAR', { lang, playing, tabId, badgeOwner });
+    setBadge(null);
+  } else {
+    console.log('[ecoute] badge: skip clear (owned by another tab)', { lang, playing, tabId, badgeOwner });
+  }
 }
 
 function setBadge(lang) {
@@ -354,6 +360,10 @@ async function onSeriesHeartbeat({ seconds, playing, meta }, sender) {
 
   const pin = currentSeries ? seriesLangs[currentSeries.name] : null;
   const lang = pin === 'fr' || pin === 'en' ? pin : null;
+  console.log('[ecoute] series heartbeat', {
+    tabId, playing, name: currentSeries && currentSeries.name, pin, lang,
+    seconds: currentSeries && currentSeries.seconds,
+  });
   // Heartbeats arrive from two frames of the same tab: the <video> iframe
   // (playing=true) and the metadata top frame (playing=false — it has no
   // video). Letting the top frame clear the badge would undo the video
