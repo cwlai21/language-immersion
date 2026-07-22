@@ -44,11 +44,13 @@ function watchKey(s) {
 
 // New titled content starts as 'todo' so it survives the window later —
 // except Shorts binges (scrolled through, nothing to resume), which start
-// 'done' (uncheck one to pin it as unfinished). Series episodes, in either
-// language, stay 'todo' like everything else: finishing an episode is
-// worth actively checking off, English included.
+// 'done' (uncheck one to pin it as unfinished). Auto-detected series
+// episodes, in either language, stay 'todo' like everything else:
+// finishing an episode is worth actively checking off. A manually-entered
+// series episode is different — typing it in after the fact only happens
+// once you've actually watched it, so it starts 'done'.
 function startsDone(s) {
-  return s.channel === 'Shorts';
+  return s.channel === 'Shorts' || (normType(s) === 'series' && s.source === 'manual');
 }
 
 // ── Watch-todo state transitions ────────────

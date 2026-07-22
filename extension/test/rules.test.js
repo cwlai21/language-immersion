@@ -69,9 +69,14 @@ test('watchKey is null for untitled content', () => {
 });
 
 /* ── startsDone: which new items auto-complete ── */
-test('series episodes start todo in either language — no auto-complete', () => {
-  assert.equal(startsDone({ language: 'en', type: 'series', title: 'x', channel: 'c' }), false);
-  assert.equal(startsDone({ language: 'fr', type: 'series', title: 'x', channel: 'c' }), false);
+test('auto-detected series episodes start todo in either language', () => {
+  assert.equal(startsDone({ language: 'en', type: 'series', title: 'x', channel: 'c', source: 'auto' }), false);
+  assert.equal(startsDone({ language: 'fr', type: 'series', title: 'x', channel: 'c', source: 'auto' }), false);
+});
+
+test('manually-entered series episodes start done — logging it after the fact means you watched it', () => {
+  assert.equal(startsDone({ language: 'en', type: 'series', title: 'x', channel: 'c', source: 'manual' }), true);
+  assert.equal(startsDone({ language: 'fr', type: 'series', title: 'x', channel: 'c', source: 'manual' }), true);
 });
 
 test('Shorts binges start done regardless of language', () => {
