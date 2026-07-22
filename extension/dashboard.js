@@ -527,7 +527,18 @@ function sessionRow(rows) {
   const totalSeconds = rows.reduce((sum, r) => sum + r.seconds, 0);
   const mins = document.createElement('span');
   mins.className = 'session-mins';
-  mins.textContent = fmtMinutes(totalSeconds / 60);
+  if (dates.length > 1) {
+    // A single combined total across days hides how it's actually split —
+    // e.g. "55m" for a podcast episode listened to in a 37m sitting one day
+    // and an 18m sitting the next reads as one continuous block. Show each
+    // day's own total instead, oldest first (matching the date range above).
+    const byDate = {};
+    for (const r of rows) byDate[r.date] = (byDate[r.date] || 0) + r.seconds;
+    mins.textContent = dates.map((d) => fmtMinutes(byDate[d] / 60)).join(' + ');
+    mins.title = `${fmtMinutes(totalSeconds / 60)} total`;
+  } else {
+    mins.textContent = fmtMinutes(totalSeconds / 60);
+  }
 
   if (rows.length === 1) {
     const edit = document.createElement('button');
