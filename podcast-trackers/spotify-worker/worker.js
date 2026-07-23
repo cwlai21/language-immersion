@@ -20,10 +20,13 @@ export default {
   },
 
   // HTTP endpoints for iPhone Shortcuts (guarded by ?token=):
+  //   /tap    — one-URL start/stop for a single Shortcut action (see below)
   //   /start  — start a timer (says since when if already running)
   //   /stop   — stop the timer and log the session
   //   /status — show running timers with elapsed time
   //   /toggle — legacy start/stop in one URL
+  //   /label  — re-open the title-or-discard form for the last session
+  //   /discard — delete the last stopped session (the label form's Skip button)
   //   /log?minutes=N — record minutes directly
   // Params: lang=fr|en (default fr), type (default reading), title.
   async fetch(request, env) {
@@ -112,25 +115,35 @@ export default {
             if (url.searchParams.get('switch') === '1') {
               const loggedMin = await finishAndLog(otherKey, otherLang, otherStarted);
               await kvPut(env, key, String(Date.now()));
-              const msg =
-                (loggedMin ? `⏹ Logged ${loggedMin}m of ${otherFlag} ${type}. ` : `⏹ ${otherFlag} discarded (under a minute). `) +
-                `▶️ ${flag} ${type} started at ${clock(Date.now())}.`;
-              if (url.searchParams.get('ajax') === '1') return new Response(msg);
-              return htmlResponse(`<h2>${msg}</h2>`, { closeAfterMs: 3000 });
+              if (!loggedMin) {
+                // Under a minute — finishAndLog already skipped saving it,
+                // so there's nothing to label.
+                return htmlResponse(
+                  `<h2>⏹ ${otherFlag} discarded (under a minute).<br>▶️ ${flag} ${type} started at ${clock(Date.now())}.</h2>`,
+                  { closeAfterMs: 3000 }
+                );
+              }
+              // Same title-or-discard prompt as a normal stop, just for the
+              // language that got stopped by the switch — the new timer is
+              // already running underneath.
+              const action = `/title?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${otherLang}&type=${encodeURIComponent(type)}`;
+              const discardAction = `/discard?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${otherLang}&type=${encodeURIComponent(type)}`;
+              return htmlResponse(`
+                <h2>✅ Logged ${loggedMin}m of ${otherFlag} ${type}.<br>▶️ ${flag} ${type} started.<br>What did you study?</h2>
+                ${labelForm(action, discardAction)}
+                <p><small>Session is already saved — the title is optional.</small></p>`);
             }
             const switchUrl =
-              `/tap?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}&switch=1&ajax=1`;
+              `/tap?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}&switch=1`;
             return htmlResponse(`
               <h2>⚠️ ${otherFlag} ${type} is already running<br>— since ${clock(otherStarted)} (${elapsedMin(otherStarted)}m).</h2>
               <p>French and English can't overlap.</p>
               <button id="sw">Stop ${otherFlag} & start ${flag}</button>
               <button id="cx" class="secondary">Cancel</button>
               <script>
-                document.getElementById('sw').onclick = async () => {
-                  const r = await fetch('${switchUrl}');
-                  document.body.innerHTML = '<h2>' + await r.text() + '</h2>';
-                  setTimeout(() => { window.open('', '_self'); window.close(); }, 2500);
-                };
+                // Full navigation, not fetch+replace — the switch response
+                // is now a whole label-form page, not a one-line message.
+                document.getElementById('sw').onclick = () => { window.location.href = '${switchUrl}'; };
                 document.getElementById('cx').onclick = () => { window.open('', '_self'); window.close(); };
               </script>`);
           }
@@ -154,9 +167,10 @@ export default {
           await kvPut(env, `last:${type}:${lang}`, JSON.stringify({ id: row.id, minutes }));
         }
         const action = `/title?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}`;
+        const discardAction = `/discard?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}`;
         return htmlResponse(`
           <h2>✅ ${minutes} min of ${flag} ${type} (${clock(started)}–${clock(Date.now())}).<br>What did you study?</h2>
-          ${labelForm(action)}
+          ${labelForm(action, discardAction)}
           <p><small>Session is already saved — the title is optional.</small></p>`);
       }
 
@@ -201,9 +215,30 @@ export default {
           ? `✅ ${last.minutes} min of ${flag} ${type} — what did you study?`
           : `🤷 No recent ${flag} ${type} session to label.`;
         const action = `/title?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}`;
+        const discardAction = `/discard?token=${encodeURIComponent(env.LOG_TOKEN)}&lang=${lang}&type=${encodeURIComponent(type)}`;
         return htmlResponse(`
           <h2>${heading}</h2>
-          ${last ? labelForm(action) : ''}`);
+          ${last ? labelForm(action, discardAction) : ''}`);
+      }
+
+      // Delete the most recently stopped timer session — the label form
+      // calls this instead of just closing when no title was entered, so
+      // an untitled "what did I even read" row never lands in the dashboard.
+      if (url.pathname === '/discard') {
+        const lastRaw = await kvGet(env, `last:${type}:${lang}`);
+        await kvDel(env, `last:${type}:${lang}`); // clear regardless — stale either way
+        if (!lastRaw) return new Response('🤷 nothing to discard');
+        const last = JSON.parse(lastRaw);
+        // return=representation so a dangling pointer (row already gone —
+        // e.g. deleted by hand, or by an earlier /discard) is reported
+        // honestly instead of a blind "success".
+        const deleted = await sb(env, `listening_sessions?id=eq.${last.id}`, {
+          method: 'DELETE',
+          headers: { Prefer: 'return=representation' },
+        });
+        return new Response(
+          deleted && deleted.length ? `🗑️ discarded ${last.minutes}m` : '🤷 already gone — nothing to discard'
+        );
       }
 
       // Attach a title to the most recently stopped timer session.
@@ -231,6 +266,10 @@ export default {
           method: 'PATCH',
           body: JSON.stringify({ title: text }),
         });
+        // A titled-and-saved session is done — clear the pointer so a later
+        // /discard (only meant for the *next* untitled stop) can never
+        // reach back and delete this one.
+        await kvDel(env, `last:${type}:${lang}`);
         const msg = `📝 Saved — ${last.minutes}m of ${flag} ${type}: “${text}”`;
         return fromForm
           ? htmlResponse(`<h2>${msg}</h2>`, { closeAfterMs: 1500 })
@@ -248,7 +287,7 @@ export default {
     } catch (e) {
       return new Response(`error: ${e.message}`, { status: 500 });
     }
-    return new Response('routes: /start /stop /status /toggle /log?minutes=N (params: lang=fr|en, type, title)', { status: 404 });
+    return new Response('routes: /tap /start /stop /status /toggle /label /discard /log?minutes=N (params: lang=fr|en, type, title)', { status: 404 });
   },
 };
 
@@ -272,30 +311,34 @@ async function kvDel(env, key) {
 
 // Form that submits via fetch so the tab never navigates — a tab opened from
 // Shortcuts may self-close only while it has no navigation history.
-function labelForm(action) {
+function labelForm(action, discardAction) {
   return `
     <form id="labelform">
       <input name="title" autofocus autocomplete="off" placeholder="e.g. Le Petit Prince, ch. 3">
       <button type="submit">Save 📝</button>
-      <button type="button" id="skipbtn" class="secondary">Skip</button>
+      <button type="button" id="skipbtn" class="secondary">Skip (discard)</button>
     </form>
-    <p><small id="autonote">Closes by itself in 20s if left empty.</small></p>
+    <p><small id="autonote">Discards itself in 20s if left empty.</small></p>
     <script>
       const closeTab = () => { window.open('', '_self'); window.close(); };
+      // No title = no way to tell what was read later, so it's not worth
+      // keeping — untitled reading rows used to just pile up silently.
+      const discard = async () => {
+        try { await fetch('${discardAction}'); } catch {}
+        closeTab();
+      };
       const input = document.querySelector('input[name=title]');
-      // Auto-close when the title is left empty — it's optional, the session
-      // is already saved. Typing anything cancels the countdown.
-      let autoClose = setTimeout(closeTab, 20000);
+      let autoClose = setTimeout(discard, 20000);
       input.addEventListener('input', () => {
         clearTimeout(autoClose);
         document.getElementById('autonote').textContent = '';
       });
-      document.getElementById('skipbtn').onclick = closeTab;
+      document.getElementById('skipbtn').onclick = discard;
       document.getElementById('labelform').addEventListener('submit', async (e) => {
         e.preventDefault();
         clearTimeout(autoClose);
         const fd = new FormData(e.target);
-        if (!String(fd.get('title') || '').trim()) return closeTab(); // empty = skip
+        if (!String(fd.get('title') || '').trim()) return discard(); // empty submit = discard too
         const btn = e.target.querySelector('button');
         btn.disabled = true;
         btn.textContent = 'Saving…';
