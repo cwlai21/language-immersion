@@ -46,6 +46,11 @@
   <p class="error-text" id="errorText" hidden></p>
   <p class="pending-text" id="pendingText" hidden></p>
 
+  <!-- Reading timer: state lives in chrome.storage.local so it keeps
+       running after the popup closes (Kindle reading can't be auto-
+       detected — positions only sync on book-open in the Mac app). -->
+  <div id="readTimer" class="read-timer"></div>
+
   <!-- Manual entry -->
   <form id="manualForm" class="manual">
     <div class="row">

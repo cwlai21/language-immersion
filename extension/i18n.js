@@ -47,6 +47,8 @@ const I18N = {
     readingLbl: 'Reading',
     seriesLbl: 'Series',
     // popup-specific
+    startReading: 'Start reading',
+    stopReading: 'Stop & log',
     notYouTube: 'Open a YouTube video to auto-track.',
     detectedFr: '🇫🇷 Detected as French — tracking',
     detectedEn: '🇬🇧 Detected as English — tracking',
@@ -127,6 +129,8 @@ const I18N = {
     readingLbl: 'Lecture',
     seriesLbl: 'Séries',
     // popup-specific
+    startReading: 'Commencer la lecture',
+    stopReading: 'Arrêter et enregistrer',
     notYouTube: 'Ouvrez une vidéo YouTube pour le suivi automatique.',
     detectedFr: '🇫🇷 Détecté comme français — suivi en cours',
     detectedEn: '🇬🇧 Détecté comme anglais — suivi en cours',

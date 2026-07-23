@@ -390,6 +390,62 @@ async function runSeriesLookup() {
 [mSeriesName, mSeason, mEpisode].forEach((el) =>
   el.addEventListener('input', scheduleSeriesLookup));
 
+/* ── Reading timer ────────────────────────── */
+// One-tap timer for Kindle/paper reading, which can't be auto-detected.
+// Only startedAt+lang live in chrome.storage.local (the popup is killed the
+// instant it loses focus, so no in-memory state survives); stopping feeds
+// the elapsed minutes into the manual form below rather than saving
+// directly — the title (usually a chapter number) changes every session
+// and needs a human edit anyway.
+const readTimerBox = document.getElementById('readTimer');
+
+async function renderReadingTimer() {
+  const { readingTimer = null } = await chrome.storage.local.get('readingTimer');
+  readTimerBox.innerHTML = '';
+
+  if (!readingTimer) {
+    const start = document.createElement('button');
+    start.className = 'mini-btn grow';
+    start.textContent = `📖 ${t('startReading')}`;
+    start.onclick = async () => {
+      await chrome.storage.local.set({ readingTimer: { startedAt: Date.now(), lang: statsLang } });
+      renderReadingTimer();
+    };
+    readTimerBox.appendChild(start);
+    return;
+  }
+
+  const elapsedMin = Math.floor((Date.now() - readingTimer.startedAt) / 60000);
+  const stop = document.createElement('button');
+  stop.className = 'mini-btn primary grow';
+  stop.textContent = `⏹ ${t('stopReading')} — ${fmtMinutes(elapsedMin)}`;
+  stop.onclick = async () => {
+    // Closing the popup between stop and save loses the prefill — the timer
+    // is already gone by then. Rare enough to keep the flow simple.
+    await chrome.storage.local.remove('readingTimer');
+    mType.value = 'reading';
+    await refreshSeriesUi();
+    mMinutes.value = Math.min(1440, Math.max(1, Math.round((Date.now() - readingTimer.startedAt) / 60000)));
+    document.getElementById('mLang').value = readingTimer.lang;
+    const { lastReadingTitle = '' } = await chrome.storage.sync.get('lastReadingTitle');
+    if (!mTitle.value) mTitle.value = lastReadingTitle;
+    renderReadingTimer();
+    mTitle.focus();
+    mTitle.select();
+  };
+
+  const cancel = document.createElement('button');
+  cancel.className = 'mini-btn';
+  cancel.textContent = '✕';
+  cancel.title = t('cancel');
+  cancel.onclick = async () => {
+    await chrome.storage.local.remove('readingTimer');
+    renderReadingTimer();
+  };
+
+  readTimerBox.append(stop, cancel);
+}
+
 /* ── Manual entry ─────────────────────────── */
 document.getElementById('manualForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -418,6 +474,9 @@ document.getElementById('manualForm').addEventListener('submit', async (e) => {
         episode: parseInt(mEpisode.value, 10) || null,
       } : {}),
     });
+    // Remember the title to prefill the next reading-timer stop — chapter
+    // titles ("The One Thing ch17") only need the number edited.
+    if (type === 'reading') chrome.storage.sync.set({ lastReadingTitle: mTitle.value.trim() });
     mMinutes.value = '';
     mTitle.value = '';
     autoFilledTitle = '';
@@ -448,6 +507,7 @@ document.querySelectorAll('[data-statslang]').forEach((pill) => {
     applyI18n();
     renderStatus();
     renderStats();
+    renderReadingTimer();
   });
 });
 
@@ -468,11 +528,14 @@ document.getElementById('dashboardBtn').addEventListener('click', () => {
   document.getElementById('mDate').value = todayKey();
   document.getElementById('mLang').value = statsLang;
   await refreshSeriesUi();
+  await renderReadingTimer();
   await loadStatus();
   await loadStats();
-  // Refresh the live session counter while the popup stays open.
+  // Refresh the live session counter (and reading-timer elapsed) while the
+  // popup stays open.
   setInterval(async () => {
     await loadStatus();
     renderStats();
+    renderReadingTimer();
   }, 5000);
 })();
