@@ -74,9 +74,13 @@ test('auto-detected series episodes start todo in either language', () => {
   assert.equal(startsDone({ language: 'fr', type: 'series', title: 'x', channel: 'c', source: 'auto' }), false);
 });
 
-test('manually-entered series episodes start done — logging it after the fact means you watched it', () => {
+test('manually-entered youtube/podcast/series episodes start done — logging it after the fact means you watched it', () => {
   assert.equal(startsDone({ language: 'en', type: 'series', title: 'x', channel: 'c', source: 'manual' }), true);
   assert.equal(startsDone({ language: 'fr', type: 'series', title: 'x', channel: 'c', source: 'manual' }), true);
+  assert.equal(startsDone({ language: 'en', type: 'podcast', title: 'x', channel: 'c', source: 'manual' }), true);
+  assert.equal(startsDone({ language: 'fr', type: 'podcast', title: 'x', channel: 'c', source: 'manual' }), true);
+  assert.equal(startsDone({ language: 'en', type: 'youtube', title: 'x', channel: 'c', source: 'manual' }), true);
+  assert.equal(startsDone({ language: 'fr', type: 'youtube', title: 'x', channel: 'c', source: 'manual' }), true);
 });
 
 test('Shorts binges start done regardless of language', () => {
@@ -84,7 +88,7 @@ test('Shorts binges start done regardless of language', () => {
   assert.equal(startsDone({ language: 'en', type: 'youtube', title: 'x', channel: 'Shorts' }), true);
 });
 
-test('ordinary youtube/podcast/reading content starts todo in either language', () => {
+test('ordinary auto-tracked youtube/podcast content (no source: manual) starts todo in either language', () => {
   assert.equal(startsDone({ language: 'en', type: 'youtube', title: 'x', channel: 'c' }), false);
   assert.equal(startsDone({ language: 'fr', type: 'podcast', title: 'x', channel: 'c' }), false);
 });

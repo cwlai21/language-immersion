@@ -44,13 +44,16 @@ function watchKey(s) {
 
 // New titled content starts as 'todo' so it survives the window later —
 // except Shorts binges (scrolled through, nothing to resume), which start
-// 'done' (uncheck one to pin it as unfinished). Auto-detected series
-// episodes, in either language, stay 'todo' like everything else:
-// finishing an episode is worth actively checking off. A manually-entered
-// series episode is different — typing it in after the fact only happens
-// once you've actually watched it, so it starts 'done'.
+// 'done' (uncheck one to pin it as unfinished). Auto-detected episodes, in
+// either language, stay 'todo' like everything else: finishing one is worth
+// actively checking off. A manually-entered youtube/podcast/series episode
+// is different — typing it in after the fact only happens once you've
+// actually watched or listened to it, so it starts 'done'. Reading is the
+// exception: every reading session is logged by hand (no auto-detection
+// exists for it), so 'manual' there just means "an ordinary reading
+// session," not "finished the book" — it still starts 'todo'.
 function startsDone(s) {
-  return s.channel === 'Shorts' || (normType(s) === 'series' && s.source === 'manual');
+  return s.channel === 'Shorts' || (normType(s) !== 'reading' && s.source === 'manual');
 }
 
 // ── Watch-todo state transitions ────────────

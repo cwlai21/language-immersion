@@ -80,7 +80,20 @@ async function loadWatchState() {
   }
 }
 
-async function saveWatchState() {
+// Two dashboard copies (extension + GitHub Pages) can have this open at
+// once, and this tab's own `watchState` may be minutes stale (loaded once at
+// init, not on every render). Saving must not blindly overwrite the shared
+// row with that stale snapshot — it re-reads the server's current value and
+// applies `mutate` on top of it, so a concurrent change from the other copy
+// survives instead of getting clobbered by a last-writer-wins blob write.
+async function saveWatchState(mutate) {
+  let latest = watchState;
+  try {
+    const rows = await sbRequest(`kv_state?key=eq.${WATCH_KEY}&select=value`);
+    if (rows.length) latest = JSON.parse(rows[0].value);
+  } catch { /* offline — merge onto whatever's already in memory */ }
+
+  watchState = mutate(latest);
   localStorage.setItem(WATCH_KEY, JSON.stringify(watchState));
   try {
     await sbRequest('kv_state?on_conflict=key', {
@@ -464,6 +477,40 @@ function mergeIntervals(intervals) {
   return out;
 }
 
+// Shared field computation for a group of merged rows (same content, one or
+// more days) — used by both the Recent Sessions list and the CSV export so
+// the two can't drift out of formatting sync.
+function sessionRowFields(rows) {
+  const s = rows[0];
+  const episodeTag = s.type === 'series' && s.season && s.episode ? `S${s.season}E${s.episode} · ` : '';
+  const title = episodeTag + (s.title || t('untitled'));
+
+  const dates = [...new Set(rows.map((r) => r.date))].sort();
+  const dateText = dates.length > 1 ? `${dates[0]} → ${dates[dates.length - 1]}` : s.date;
+  // Clock ranges only make sense within a single day.
+  const intervals = dates.length > 1 ? [] : mergeIntervals(rows.map(sessionInterval).filter(Boolean));
+  const timeText = intervals.map(([a, b]) => `${hm(a)}–${hm(b)}`).join(', ');
+
+  const auto = rows.some((r) => ['auto', 'anki', 'apple', 'spotify'].includes(r.source));
+  const imported = rows.some((r) => r.source === 'import');
+
+  const totalSeconds = rows.reduce((sum, r) => sum + r.seconds, 0);
+  // A single combined total across days hides how it's actually split —
+  // e.g. "55m" for a podcast episode listened to in a 37m sitting one day
+  // and an 18m sitting the next reads as one continuous block. Show each
+  // day's own total instead, oldest first (matching the date range above).
+  let durationText;
+  if (dates.length > 1) {
+    const byDate = {};
+    for (const r of rows) byDate[r.date] = (byDate[r.date] || 0) + r.seconds;
+    durationText = dates.map((d) => fmtMinutes(byDate[d] / 60)).join(' + ');
+  } else {
+    durationText = fmtMinutes(totalSeconds / 60);
+  }
+
+  return { s, title, dateText, timeText, channel: s.channel || '', auto, imported, durationText, totalSeconds };
+}
+
 // One list item for a group of rows (same content, same day; often length 1).
 function sessionRow(rows) {
   const s = rows[0];
@@ -479,9 +526,10 @@ function sessionRow(rows) {
     box.title = 'Done?';
     box.checked = watchState[k] === 'done';
     box.onchange = () => {
-      watchState[k] = box.checked ? 'done' : 'todo';
+      const val = box.checked ? 'done' : 'todo';
+      watchState[k] = val; // optimistic local update so the row reflects it immediately
       li.classList.toggle('done', box.checked);
-      saveWatchState();
+      saveWatchState((latest) => ({ ...latest, [k]: val }));
     };
     li.appendChild(box);
   }
@@ -503,42 +551,26 @@ function sessionRow(rows) {
     });
   }
 
+  const fields = sessionRowFields(rows);
   const info = document.createElement('div');
   info.className = 'session-info';
   const title = document.createElement('div');
   title.className = 'session-title';
-  const episodeTag = s.type === 'series' && s.season && s.episode ? `S${s.season}E${s.episode} · ` : '';
-  title.textContent = episodeTag + (s.title || t('untitled'));
+  title.textContent = fields.title;
   const meta = document.createElement('div');
   meta.className = 'session-meta';
-  const dates = [...new Set(rows.map((r) => r.date))].sort();
-  const bits = [dates.length > 1 ? `${dates[0]} → ${dates[dates.length - 1]}` : s.date];
-  // Clock ranges only make sense within a single day.
-  const intervals = dates.length > 1 ? [] : mergeIntervals(rows.map(sessionInterval).filter(Boolean));
-  if (intervals.length) {
-    bits.push(intervals.map(([a, b]) => `${hm(a)}–${hm(b)}`).join(', '));
-  }
-  if (s.channel) bits.push(s.channel);
-  if (rows.some((r) => ['auto', 'anki', 'apple', 'spotify'].includes(r.source))) bits.push('🤖 auto');
-  if (rows.some((r) => r.source === 'import')) bits.push('📥 est.');
+  const bits = [fields.dateText];
+  if (fields.timeText) bits.push(fields.timeText);
+  if (fields.channel) bits.push(fields.channel);
+  if (fields.auto) bits.push('🤖 auto');
+  if (fields.imported) bits.push('📥 est.');
   meta.textContent = bits.join(' · ');
   info.append(title, meta);
 
-  const totalSeconds = rows.reduce((sum, r) => sum + r.seconds, 0);
   const mins = document.createElement('span');
   mins.className = 'session-mins';
-  if (dates.length > 1) {
-    // A single combined total across days hides how it's actually split —
-    // e.g. "55m" for a podcast episode listened to in a 37m sitting one day
-    // and an 18m sitting the next reads as one continuous block. Show each
-    // day's own total instead, oldest first (matching the date range above).
-    const byDate = {};
-    for (const r of rows) byDate[r.date] = (byDate[r.date] || 0) + r.seconds;
-    mins.textContent = dates.map((d) => fmtMinutes(byDate[d] / 60)).join(' + ');
-    mins.title = `${fmtMinutes(totalSeconds / 60)} total`;
-  } else {
-    mins.textContent = fmtMinutes(totalSeconds / 60);
-  }
+  mins.textContent = fields.durationText;
+  if (fields.durationText.includes(' + ')) mins.title = `${fmtMinutes(fields.totalSeconds / 60)} total`;
 
   if (rows.length === 1) {
     const edit = document.createElement('button');
@@ -630,6 +662,15 @@ function enterEditMode(li, s) {
         language: langSel.value,
       });
       await fetchSessions();
+      // Saving an edit is a deliberate manual confirmation of this session —
+      // same intent as startsDone() for a hand-typed series episode — so it
+      // marks the item done, regardless of how it was originally tracked.
+      const updated = allSessions.find((r) => r.id === s.id);
+      const k = updated && watchKey(updated);
+      if (k) {
+        watchState[k] = 'done';
+        saveWatchState((latest) => ({ ...latest, [k]: 'done' }));
+      }
       render();
     } catch (e) {
       showError(e);
@@ -665,7 +706,15 @@ function renderSessionList() {
   const assigned = assignDefaultStates(watchState, recent);
   const pruned = pruneDeadKeys(assigned.state, allSessions);
   watchState = pruned.state;
-  if (assigned.changed || pruned.changed) saveWatchState();
+  if (assigned.changed || pruned.changed) {
+    // Re-derive against whatever's on the server at save time, not this
+    // tab's possibly-stale copy — same reasoning as the two calls above.
+    saveWatchState((latest) => {
+      const a = assignDefaultStates(latest, recent);
+      const p = pruneDeadKeys(a.state, allSessions);
+      return p.state;
+    });
+  }
 
   // Language sections, then collapsible per-source groups inside each.
   const langs = langFilter === 'all' ? ['fr', 'en'] : [langFilter];
@@ -714,20 +763,33 @@ function showError(e) {
 }
 
 /* ── CSV export ───────────────────────────── */
+// Mirrors the Recent Sessions list exactly: same language → type grouping,
+// same row merging (groupSameContent), same field formatting (sessionRowFields)
+// — just flattened to rows instead of DOM, and covering all history rather
+// than just the current week's window.
+const csvCell = (v) => `"${String(v).replace(/"/g, '""')}"`;
 document.getElementById('exportBtn').addEventListener('click', () => {
-  const rows = [['date', 'minutes', 'language', 'type', 'title', 'channel', 'source', 'season', 'episode']];
-  for (const s of [...allSessions].reverse()) {
-    rows.push([
-      s.date,
-      (s.seconds / 60).toFixed(1),
-      sessionLang(s),
-      s.type,
-      `"${(s.title || '').replace(/"/g, '""')}"`,
-      `"${(s.channel || '').replace(/"/g, '""')}"`,
-      s.source,
-      s.season ?? '',
-      s.episode ?? '',
-    ]);
+  const rows = [['language', 'type', 'title', 'date', 'time', 'channel', 'flags', 'duration']];
+  for (const lang of ['fr', 'en']) {
+    const ofLang = allSessions.filter((s) => sessionLang(s) === lang);
+    for (const type of Object.keys(TYPE_META)) {
+      const group = ofLang.filter((s) => normType(s) === type);
+      if (!group.length) continue;
+      for (const merged of groupSameContent(group)) {
+        const f = sessionRowFields(merged);
+        const flags = [f.auto ? '🤖 auto' : '', f.imported ? '📥 est.' : ''].filter(Boolean).join(' · ');
+        rows.push([
+          t(lang === 'fr' ? 'french' : 'english'),
+          typeLabel(type),
+          csvCell(f.title),
+          f.dateText,
+          f.timeText,
+          csvCell(f.channel),
+          flags,
+          f.durationText,
+        ]);
+      }
+    }
   }
   const blob = new Blob(['﻿' + rows.map((r) => r.join(',')).join('\n')], {
     type: 'text/csv;charset=utf-8',
@@ -805,10 +867,12 @@ document.querySelectorAll('[data-langfilter]').forEach((pill) => {
   }
   render();
 
-  // Pick up freshly auto-tracked sessions while the tab stays open.
+  // Pick up freshly auto-tracked sessions, and checkbox/goal changes made
+  // from the other dashboard copy (extension vs. GitHub Pages), while the
+  // tab stays open.
   setInterval(async () => {
     try {
-      await fetchSessions();
+      await Promise.all([fetchSessions(), loadWatchState()]);
       render();
     } catch { /* transient network error — keep showing stale data */ }
   }, 60000);
