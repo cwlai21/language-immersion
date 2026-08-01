@@ -5,7 +5,7 @@ Reads the macOS Podcasts app's local library (which also receives play-state
 synced from an iPhone via iCloud), diffs each episode's playhead against the
 previous run, and logs listening deltas to Supabase per show language.
 
-Runs from launchd every 15 minutes (com.ecoute.applepodcasts.plist).
+Runs from launchd every 5 minutes (com.ecoute.applepodcasts.plist).
 First run only records baselines; deltas start from the second run.
 """
 
@@ -138,15 +138,26 @@ def main():
 
     PLAYSTATE_PLAYED = 2  # Apple resets ZPLAYHEAD to 0 when an episode completes
 
+    # episodes[uuid] is {"pos": <baseline playhead>, "since": <unix ts the
+    # current backlog started, or None if fully caught up>} — old state
+    # files store a bare number instead of a dict, so read leniently.
+    def entry_pos(entry):
+        return entry["pos"] if isinstance(entry, dict) else (entry or 0)
+
+    def entry_since(entry):
+        return entry.get("since") if isinstance(entry, dict) else None
+
     for uuid, playhead, duration, played_ts, ep_title, show_title, feed_url, playstate in recent_episodes():
         seen.add(uuid)
         playhead = playhead or 0
 
         if first_run:
-            episodes[uuid] = playhead
+            episodes[uuid] = {"pos": playhead, "since": None}
             continue
 
-        base = episodes.get(uuid, 0)
+        entry = episodes.get(uuid, 0)
+        base = entry_pos(entry)
+        catchup_since = entry_since(entry)
         delta = playhead - base
         if delta <= 0:
             # Finished episodes reset to playhead 0 with state "played" —
@@ -154,7 +165,7 @@ def main():
             if (playhead < 60 and base > 60 and playstate == PLAYSTATE_PLAYED
                     and duration and duration > base):
                 if duration - base < MIN_SECONDS:
-                    episodes[uuid] = playhead
+                    episodes[uuid] = {"pos": playhead, "since": None}
                     continue
                 delta = duration - base
                 base = duration - delta  # keep the arithmetic below consistent
@@ -164,17 +175,29 @@ def main():
                 # when it syncs, doesn't get double-counted.
                 continue
             else:
-                episodes[uuid] = playhead  # rewind/restart — just re-baseline
+                episodes[uuid] = {"pos": playhead, "since": None}  # rewind/restart — re-baseline
                 continue
 
         lang = show_language(cfg, show_title) or feed_language(state, show_title, feed_url)
         if lang is None:  # non-fr/en show (e.g. Chinese) — skip but re-baseline
-            episodes[uuid] = playhead
+            episodes[uuid] = {"pos": playhead, "since": None}
             continue
 
-        capped = min(delta, elapsed * 2, duration or delta)
+        # Sanity-cap how much of a jump counts as real listening (protects
+        # against sync artifacts) — but a Mac that only wakes in short bursts
+        # (brief window, then asleep again) ticks with a tiny `elapsed` every
+        # time, which used to reset this cap to a few minutes on every single
+        # run and forced a large legitimate backlog (a long phone-only
+        # listening stretch that synced in one lump) to trickle out in
+        # MIN_SECONDS-sized slivers over a dozen+ wake cycles. Instead, once
+        # a backlog is detected, its clock keeps running (backdated to
+        # roughly when it first appeared) across runs instead of resetting,
+        # so the allowance grows the longer it stays uncredited and drains
+        # in a handful of runs rather than a couple dozen.
+        budget_elapsed = (now - catchup_since) if catchup_since else elapsed
+        capped = min(delta, budget_elapsed * 2, duration or delta)
         if capped < MIN_SECONDS:
-            continue  # leave baseline in place so it accumulates for next run
+            continue  # leave baseline (and backlog clock) in place for next run
 
         row = {
             "date": logical_date(played_ts or now),
@@ -188,8 +211,15 @@ def main():
         try:
             sb_insert(cfg, row)
             # Advance only by what was logged: if the sanity cap clipped a
-            # lump of late-synced listening, the rest is logged next run.
-            episodes[uuid] = base + capped
+            # lump of late-synced listening, the rest is logged next run —
+            # keep its backlog clock alive (or start one, backdated by this
+            # run's elapsed) so the next run's cap picks up where this left
+            # off instead of shrinking back to a single tick's allowance.
+            still_behind = capped < delta
+            episodes[uuid] = {
+                "pos": base + capped,
+                "since": (catchup_since or (now - elapsed)) if still_behind else None,
+            }
             inserted += 1
             log(f"logged {int(capped)}s [{lang}] {show_title} — {ep_title}")
         except Exception as e:
