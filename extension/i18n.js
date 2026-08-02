@@ -186,3 +186,9 @@ function applyI18n(root = document) {
     el.placeholder = t(el.dataset.i18nPh);
   });
 }
+
+// Dual browser/Node: a plain <script> tag defines these as globals; Node
+// tests get them via require() (see list-rules.js's sessionRowFields).
+if (typeof module !== 'undefined') {
+  module.exports = { I18N, setUiLang, t, applyI18n };
+}
