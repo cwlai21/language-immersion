@@ -14,8 +14,9 @@ const LANG_FLAGS = { fr: '🇫🇷', en: '🇬🇧' };
 
 /* ── Date helpers ─────────────────────────── */
 // pad, dateKey, ROLLOVER_HOUR, logicalNow, todayKey, startOfWeek,
-// sessionLang, TODO_TYPES, normType and watchKey all live in rules.js,
-// loaded as a <script> tag before this file (see dashboard.html).
+// minutesByDate, computeStats, sessionLang, TODO_TYPES, normType and
+// watchKey all live in rules.js, loaded as a <script> tag before this
+// file (see dashboard.html).
 
 function fmtMinutes(mins) {
   mins = Math.round(mins);
@@ -133,44 +134,8 @@ async function saveGoals() {
 // matches TYPE_META's keys below).
 
 /* ── Aggregation (in minutes) ─────────────── */
-function minutesByDate(sessions) {
-  const map = {};
-  for (const s of sessions) map[s.date] = (map[s.date] || 0) + s.seconds / 60;
-  return map;
-}
-
-function computeStats(sessions) {
-  const byDate = minutesByDate(sessions);
-  const now = logicalNow();
-  const today = byDate[todayKey()] || 0;
-
-  const weekStartKey = dateKey(startOfWeek(now));
-  const monthPrefix = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
-  let week = 0;
-  let month = 0;
-  let total = 0;
-
-  for (const [date, mins] of Object.entries(byDate)) {
-    total += mins;
-    if (date >= weekStartKey) week += mins;
-    if (date.startsWith(monthPrefix)) month += mins;
-  }
-
-  let streak = 0;
-  const cursor = logicalNow();
-  if (!byDate[dateKey(cursor)]) cursor.setDate(cursor.getDate() - 1);
-  while (byDate[dateKey(cursor)]) {
-    streak++;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  const dayOfWeek = ((now.getDay() + 6) % 7) + 1;
-  return {
-    today, week, month, total, streak,
-    weekAvg: week / dayOfWeek,
-    monthAvg: month / now.getDate(),
-  };
-}
+// minutesByDate/computeStats live in rules.js now — shared with popup.js,
+// which used to compute the same today/week/month totals by hand.
 
 function dailySeries(sessions, days = 14) {
   const byDate = minutesByDate(sessions);

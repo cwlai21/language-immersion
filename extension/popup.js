@@ -1,20 +1,9 @@
 /* Popup: shows tracking status for the active tab, per-language quick stats
  * from Supabase, manual entry, and per-video / per-channel controls. */
 
-const pad = (n) => String(n).padStart(2, '0');
-const dateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-// The tracker's day starts at 4am (like Anki's rollover), so "today"
-// computations shift the clock back four hours.
-const ROLLOVER_HOUR = 4;
-const logicalNow = () => new Date(Date.now() - ROLLOVER_HOUR * 3600 * 1000);
-const todayKey = () => dateKey(logicalNow());
-
-function startOfWeek(d) {
-  const out = new Date(d);
-  out.setDate(out.getDate() - ((out.getDay() + 6) % 7));
-  out.setHours(0, 0, 0, 0);
-  return out;
-}
+// pad, dateKey, ROLLOVER_HOUR, logicalNow, todayKey, startOfWeek,
+// minutesByDate, computeStats and goalStatusSingle all live in rules.js,
+// loaded as a <script> tag before this file (see popup.html).
 
 function fmtMinutes(mins) {
   mins = Math.round(mins);
@@ -229,33 +218,21 @@ async function loadStats() {
 
 async function renderStats() {
   if (!statsRows) return;
-  const now = logicalNow();
-  const monthStart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
-  const weekStart = dateKey(startOfWeek(now));
   const tk = todayKey();
 
-  let today = 0;
-  let week = 0;
-  let month = 0;
-  for (const r of statsRows) {
-    if ((r.language || 'fr') !== statsLang) continue;
-    const mins = r.seconds / 60;
-    if (r.date === tk) today += mins;
-    if (r.date >= weekStart) week += mins;
-    if (r.date >= monthStart) month += mins;
-  }
+  const sessions = statsRows.filter((r) => (r.language || 'fr') === statsLang);
 
-  // Include the live in-progress session so the numbers feel real-time.
+  // Include the live in-progress session so the numbers feel real-time —
+  // just another row, so computeStats doesn't need to know "live" exists.
   const live = tracking && tracking.currentSession;
   if (live && live.date === tk && (live.lang || 'fr') === statsLang) {
-    today += live.seconds / 60;
-    week += live.seconds / 60;
-    month += live.seconds / 60;
+    sessions.push({ date: live.date, seconds: live.seconds });
   }
 
-  document.getElementById('qsToday').textContent = fmtMinutes(today);
-  document.getElementById('qsWeek').textContent = fmtMinutes(week);
-  document.getElementById('qsMonth').textContent = fmtMinutes(month);
+  const stats = computeStats(sessions);
+  document.getElementById('qsToday').textContent = fmtMinutes(stats.today);
+  document.getElementById('qsWeek').textContent = fmtMinutes(stats.week);
+  document.getElementById('qsMonth').textContent = fmtMinutes(stats.month);
 
   // Supabase is the source of truth (same key the dashboards use) so a goal
   // changed from either dashboard shows up here too, not just chrome.storage.sync.
@@ -266,12 +243,13 @@ async function renderStats() {
   } catch { goals = null; }
   if (!goals) ({ goals = { fr: 30, en: 30 } } = await chrome.storage.sync.get('goals'));
   const goal = goals[statsLang] || 30;
-  const pct = Math.min(100, Math.round((today / goal) * 100));
+  const goalStatus = goalStatusSingle(goal, stats.today);
+  const pct = Math.round(goalStatus.pct * 100);
   const fill = document.getElementById('goalFill');
   fill.style.width = pct + '%';
-  fill.classList.toggle('done', pct >= 100);
+  fill.classList.toggle('done', goalStatus.done);
   document.getElementById('goalText').textContent =
-    pct >= 100 ? t('goalDone') : `${Math.round(today)} ${t('goalOf')} ${goal} ${t('goalUnit')}`;
+    goalStatus.done ? t('goalDone') : `${Math.round(stats.today)} ${t('goalOf')} ${goal} ${t('goalUnit')}`;
 
   const pendingText = document.getElementById('pendingText');
   if (tracking && tracking.pendingCount > 0) {

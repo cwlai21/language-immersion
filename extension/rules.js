@@ -23,6 +23,49 @@ function startOfWeek(d) {
   return out;
 }
 
+// ── Session-stats aggregation ────────────────
+// Shared by the dashboard (charts, stats cards) and the popup (quick
+// today/week/month totals) — the two used to compute this by hand,
+// independently, and had already drifted on goal-percent rounding.
+function minutesByDate(sessions) {
+  const map = {};
+  for (const s of sessions) map[s.date] = (map[s.date] || 0) + s.seconds / 60;
+  return map;
+}
+
+function computeStats(sessions, rawNow = new Date()) {
+  const byDate = minutesByDate(sessions);
+  const now = logicalNow(rawNow);
+  const today = byDate[todayKey(rawNow)] || 0;
+
+  const weekStartKey = dateKey(startOfWeek(now));
+  const monthPrefix = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  let week = 0;
+  let month = 0;
+  let total = 0;
+
+  for (const [date, mins] of Object.entries(byDate)) {
+    total += mins;
+    if (date >= weekStartKey) week += mins;
+    if (date.startsWith(monthPrefix)) month += mins;
+  }
+
+  let streak = 0;
+  const cursor = logicalNow(rawNow);
+  if (!byDate[dateKey(cursor)]) cursor.setDate(cursor.getDate() - 1);
+  while (byDate[dateKey(cursor)]) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  const dayOfWeek = ((now.getDay() + 6) % 7) + 1;
+  return {
+    today, week, month, total, streak,
+    weekAvg: week / dayOfWeek,
+    monthAvg: month / now.getDate(),
+  };
+}
+
 // ── Session shape helpers ───────────────────
 function sessionLang(s) {
   return s.language === 'en' ? 'en' : 'fr';
@@ -117,6 +160,7 @@ function goalStatusSingle(goal, today) {
 if (typeof module !== 'undefined') {
   module.exports = {
     pad, dateKey, ROLLOVER_HOUR, logicalNow, todayKey, startOfWeek,
+    minutesByDate, computeStats,
     sessionLang, KNOWN_TYPES, normType, TODO_TYPES, watchKey, startsDone,
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
   };

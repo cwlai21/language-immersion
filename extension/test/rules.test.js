@@ -7,6 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   dateKey, logicalNow, todayKey, startOfWeek,
+  minutesByDate, computeStats,
   sessionLang, normType, watchKey, startsDone,
   assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
 } = require('../rules.js');
@@ -198,6 +199,49 @@ test('goalStatusSingle done/pct thresholds', () => {
   assert.equal(goalStatusSingle(30, 29).done, false);
   assert.equal(goalStatusSingle(30, 30).done, true);
   assert.equal(goalStatusSingle(30, 15).pct, 0.5);
+});
+
+/* ── minutesByDate / computeStats: shared by the dashboard and the
+   popup, which used to compute this by hand independently ── */
+test('minutesByDate sums seconds per date across languages and types', () => {
+  const sessions = [
+    { date: '2026-07-20', seconds: 60 },
+    { date: '2026-07-20', seconds: 120 },
+    { date: '2026-07-21', seconds: 30 },
+  ];
+  assert.deepEqual(minutesByDate(sessions), { '2026-07-20': 3, '2026-07-21': 0.5 });
+});
+
+test('computeStats sums today/week/month against a pinned clock', () => {
+  // Monday 2026-07-20 is the week start; July is the month.
+  const now = new Date('2026-07-22T10:00:00');
+  const sessions = [
+    { date: '2026-07-22', seconds: 600 },  // today, 10 min
+    { date: '2026-07-20', seconds: 1200 }, // this week (Monday), 20 min
+    { date: '2026-06-30', seconds: 6000 }, // last month, excluded
+  ];
+  const stats = computeStats(sessions, now);
+  assert.equal(stats.today, 10);
+  assert.equal(stats.week, 30);
+  assert.equal(stats.month, 30);
+  assert.equal(stats.total, 30 + 100); // 6000s = 100min, still counts toward total
+});
+
+test('computeStats streak counts consecutive logical days ending today', () => {
+  const now = new Date('2026-07-22T10:00:00');
+  const sessions = [
+    { date: '2026-07-22', seconds: 60 },
+    { date: '2026-07-21', seconds: 60 },
+    { date: '2026-07-20', seconds: 60 },
+    { date: '2026-07-18', seconds: 60 }, // gap on the 19th breaks the streak
+  ];
+  assert.equal(computeStats(sessions, now).streak, 3);
+});
+
+test('computeStats streak is 0 with no session today or yesterday', () => {
+  const now = new Date('2026-07-22T10:00:00');
+  const sessions = [{ date: '2026-07-10', seconds: 60 }];
+  assert.equal(computeStats(sessions, now).streak, 0);
 });
 
 /* ── sessionLang / normType basics ── */
