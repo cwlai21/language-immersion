@@ -1,13 +1,15 @@
 # Écoute — French & English Listening Tracker
 
-Tracks hours spent listening to French and English YouTube videos and
-podcasts, with daily / weekly / monthly dashboards.
+Tracks hours spent listening to French and English YouTube videos,
+podcasts, and streaming series, with daily / weekly / monthly dashboards.
 
 Four trackers, one Supabase table:
 
 - **`extension/`** — Chrome extension (the main app). Auto-detects French and
   English YouTube videos, tracks watch time in the background, and stores
-  sessions in **Supabase** (project "Language Immersion").
+  sessions in **Supabase** (project "Language Immersion"). Also tracks
+  episodes on Gimy/Netflix/Disney+ once you pin a series to a language (see
+  [Series tracking](#series-tracking-streaming-sites)).
 - **`anki-addon/`** — Anki add-on that syncs daily Anki review time into the
   same Supabase table (already installed to
   `~/Library/Application Support/Anki2/addons21/anki_supabase_sync/`).
@@ -118,6 +120,32 @@ unused Fly.io variant of the same poller.
 Note: neither Spotify's API nor Apple's database exposes *historical*
 listening durations, so tracking starts from install; Spotify's GDPR
 "extended streaming history" export could backfill history later if wanted.
+
+## Series tracking (streaming sites)
+
+The extension also tracks episodes on **Gimy, Netflix, and Disney+** via a
+content script (`series-detect.js`). These players expose no ASR caption
+track, so language can't be auto-detected the way YouTube's can — instead,
+the first time a series is seen, the background worker asks TMDB for the
+show's **original language** and auto-pins it if that's French or English.
+Shows TMDB can't resolve to fr/en (Chinese, Korean, etc.) stay unpinned, and
+the popup falls back to letting you **pin it to 🇫🇷/🇬🇧, or Don't track**
+by hand. Either way, once a series is pinned every later episode tracks
+automatically under that language; unpinned series are detected but not
+logged.
+
+The content script runs in every frame (`all_frames`) because some sites
+(e.g. Gimy) mount their player inside a same-origin iframe — each frame
+counts playback seconds for the `<video>` it owns, only the top frame reads
+the on-page title/episode metadata, and the background worker merges the
+two per tab (state is keyed by `tabId` so two series playing in different
+tabs never fragment each other's sessions). Missing or flaky metadata reads
+(ad overlays, re-renders) are treated as "still the same episode," not as a
+change, to avoid splitting one viewing into dozens of sub-minute rows.
+
+Episode titles are filled in via a TMDB lookup when the site only exposes an
+episode number (Gimy); manual entry also supports `type: 'series'` with the
+same debounced TMDB lookup to help fill in title metadata by hand.
 
 ## Data model
 
