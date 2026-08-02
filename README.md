@@ -124,7 +124,7 @@ listening durations, so tracking starts from install; Spotify's GDPR
 ```sql
 listening_sessions(
   id uuid, date, seconds, language ('fr'|'en'),
-  type ('youtube'|'podcast'|'anki'), title, channel, video_id,
+  type ('youtube'|'podcast'|'anki'|'series'), title, channel, video_id,
   source ('auto'|'manual'|'timer'|'anki'), created_at
 )
 ```
