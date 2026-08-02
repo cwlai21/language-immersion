@@ -54,7 +54,7 @@ function goalStatus(stats) {
 /* ── Data ─────────────────────────────────── */
 async function fetchSessions() {
   allSessions = await sb.listSessions(
-    'select=id,date,seconds,language,type,title,channel,source,season,episode,created_at&order=date.desc,created_at.desc&limit=5000'
+    'select=id,date,seconds,language,type,title,channel,source,season,episode,created_at&order=date.desc,created_at.desc'
   );
 }
 

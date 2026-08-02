@@ -26,8 +26,23 @@ const sb = {
     });
   },
   // params: PostgREST query string, e.g. 'select=date,seconds&date=gte.2026-07-01'
-  listSessions(params = 'select=*') {
-    return sbRequest(`listening_sessions?${params}`);
+  // Supabase caps every response at 1000 rows server-side regardless of a
+  // client `limit` — silently, with no error, just a truncated array. A
+  // history fetch past that row count used to lose its oldest days (and
+  // with them, the day streak) with no sign anything was wrong. Paginate
+  // with Range until a page comes back short, so the caller always gets
+  // everything the query matches.
+  async listSessions(params = 'select=*') {
+    const PAGE = 1000;
+    let all = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const page = await sbRequest(`listening_sessions?${params}`, {
+        headers: { Range: `${offset}-${offset + PAGE - 1}` },
+      });
+      all = all.concat(page);
+      if (page.length < PAGE) break;
+    }
+    return all;
   },
   deleteSession(id) {
     return sbRequest(`listening_sessions?id=eq.${encodeURIComponent(id)}`, {
