@@ -228,6 +228,15 @@ async function renderStats() {
   if (live && live.date === tk && (live.lang || 'fr') === statsLang) {
     sessions.push({ date: live.date, seconds: live.seconds });
   }
+  // The live series session is tracked separately (per-tab, in currentSeries)
+  // and its language is the pin, not a field on the object — without this,
+  // in-progress streaming time stays invisible in today's total until it
+  // finalizes to Supabase.
+  const liveSeries = tracking && tracking.currentSeries;
+  if (liveSeries && liveSeries.date === tk && liveSeries.seconds > 0 &&
+      (tracking.seriesLangs || {})[liveSeries.name] === statsLang) {
+    sessions.push({ date: liveSeries.date, seconds: liveSeries.seconds });
+  }
 
   const stats = computeStats(sessions);
   document.getElementById('qsToday').textContent = fmtMinutes(stats.today);
