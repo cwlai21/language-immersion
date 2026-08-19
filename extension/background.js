@@ -24,7 +24,10 @@ const MIN_SESSION_SECONDS = 30;
 // floor was silently discarding it at flush time.
 const SHORTS_MIN_SECONDS = 15;
 const TITLE_RETRIES = 3; // recovery attempts before an untitled row is dropped
-const IDLE_FINALIZE_MS = 3 * 60 * 1000;
+// 90s (not 3 min) so a stopped session lands on the dashboard sooner — long
+// enough to ride out a brief pause without finalizing mid-listen, and the
+// 'tick' alarm's 60s floor makes anything shorter pointless anyway.
+const IDLE_FINALIZE_MS = 90 * 1000;
 const SHORTS_FLUSH_IDLE_MS = 90 * 1000; // shorts pool flushes sooner
 const MAX_OVERRIDES = 100;
 

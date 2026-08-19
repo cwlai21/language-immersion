@@ -36,7 +36,7 @@ YouTube's auto-generated (ASR) caption track is always in the video's
 **spoken** language, so the extension reads the player response and treats an
 ASR track with language `fr` as French and `en` as English. While a detected
 video plays, a badge appears on the extension icon (blue **FR** / green
-**EN**) and seconds accumulate; when you pause for 3+ minutes, navigate away,
+**EN**) and seconds accumulate; when you pause for 90+ seconds, navigate away,
 or switch videos, the session is saved to Supabase with its language
 (sessions under 30 seconds are discarded; failed uploads are queued and
 retried automatically).
