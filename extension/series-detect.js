@@ -80,12 +80,19 @@ function netflixMeta() {
   let episode = null;
   let epTitle = '';
   for (const span of t.querySelectorAll('span')) {
-    const se = span.textContent.match(/^S(\d+)\s*[:：]\s*E(\d+)$/i);
+    const txt = span.textContent.trim();
+    // Season/episode label. Netflix localises it: "S1:E5" on the English UI,
+    // "第1季：第1集" on the Chinese one. Without parsing the localised form,
+    // episode stays null, and seriesChanged (which only splits on a non-null
+    // episode mismatch) goes blind — so one episode's viewing can slip across
+    // rows mislabelled with a neighbouring episode's title.
+    const se = txt.match(/^S(\d+)\s*[:：]\s*E(\d+)$/i)
+            || txt.match(/^第\s*(\d+)\s*季\s*[：:]?\s*第?\s*(\d+)\s*[集话話]$/);
     if (se) {
       season = parseInt(se[1], 10);
       episode = parseInt(se[2], 10);
-    } else if (span.textContent.trim()) {
-      epTitle = span.textContent.trim();
+    } else if (txt) {
+      epTitle = txt;
     }
   }
   return { site: 'netflix', name, season, episode, epTitle };
