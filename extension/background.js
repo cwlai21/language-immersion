@@ -3,7 +3,7 @@
 // offline retry queue). All state lives in chrome.storage.local because MV3
 // workers unload at any time.
 
-importScripts('config.js', 'supabase.js', 'lang-detect.js', 'tmdb.js', 'series-rules.js');
+importScripts('config.js', 'supabase.js', 'lang-detect.js', 'tmdb.js', 'series-rules.js', 'session-rules.js');
 // Optional personal TMDB key from git-ignored config.local.js. Don't
 // importScripts it: on checkouts without the file some Chrome versions fail
 // the whole service-worker registration ("An unknown error occurred when
@@ -266,38 +266,15 @@ async function onHeartbeat({ video, seconds, playing }, sender) {
     };
   }
 
-  let session = currentSession;
-  if (session && session.videoId !== video.videoId) {
-    // A heartbeat for a *different* video only takes over when it's actually
-    // playing. A second YouTube tab left paused/in the background still
-    // heartbeats (throttled to ~once a minute), and letting that finalize the
-    // active video would chop it into a row per minute — the same trap the
-    // shorts pool sidesteps above. Ignore it and keep the real session alive.
-    if (!playing) {
-      return { tracked: false, lang: null, reason: null, sessionSeconds: session.seconds };
-    }
-    await finalizeSession(session);
-    session = null;
-  }
-
   const decision = trackDecision(video, overrides, trackedChannels);
-  if (decision) {
-    if (!session) {
-      session = {
-        videoId: video.videoId,
-        title: video.title,
-        channel: video.channel,
-        channelId: video.channelId,
-        date: todayKey(),
-        seconds: 0,
-        startedAt: Date.now(),
-      };
-    }
-    session.seconds += seconds;
-    session.lastBeat = Date.now();
-    session.lang = decision.lang;
-    session.reason = decision.reason;
+  // Pure transition (see session-rules.js). `ignored` means a paused/background
+  // tab heartbeat for a different video — leave the active session untouched.
+  const step = applyHeartbeat(currentSession, { video, seconds, playing, decision }, Date.now(), todayKey());
+  if (step.ignored) {
+    return { tracked: false, lang: null, reason: null, sessionSeconds: currentSession.seconds };
   }
+  if (step.finalized) await finalizeSession(step.finalized);
+  const session = step.session;
 
   await chrome.storage.local.set({ currentSession: session });
   await updateBadge(decision ? decision.lang : null, playing, sender);
