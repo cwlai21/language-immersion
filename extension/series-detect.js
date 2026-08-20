@@ -12,6 +12,12 @@
 // streams by tab.
 
 (() => {
+// Self-heal re-injects into frames that lost their script. Tear any prior
+// instance in this frame down first, so stacked copies can't each count and
+// heartbeat the same playback (which fragments/duplicates rows). The flag is
+// kept as a per-frame liveness marker — healSeriesTab probes it to decide
+// which frames still need injecting.
+if (typeof window.__ecouteSeriesTeardown === 'function') window.__ecouteSeriesTeardown();
 if (window.__ecouteSeriesLoaded) return; // double-injection guard
 window.__ecouteSeriesLoaded = true;
 
@@ -149,11 +155,11 @@ function isPlaying() {
 
 let pendingSeconds = 0;
 
-setInterval(() => {
+const countTimer = setInterval(() => {
   if (isPlaying()) pendingSeconds += TICK_SECONDS;
 }, TICK_SECONDS * 1000);
 
-setInterval(flush, FLUSH_MS);
+const flushTimer = setInterval(flush, FLUSH_MS);
 
 function flush() {
   const seconds = pendingSeconds;
@@ -175,7 +181,7 @@ function send(msg) {
 }
 
 /* ── Popup / self-heal queries ────────────── */
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+function onMessage(msg, _sender, sendResponse) {
   if (msg.type === 'ping') {
     sendResponse({ ok: true });
   }
@@ -184,5 +190,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'get-series-status' && isTop) {
     sendResponse({ meta: extractMeta(), playing: isPlaying() });
   }
-});
+}
+chrome.runtime.onMessage.addListener(onMessage);
+
+window.__ecouteSeriesTeardown = () => {
+  clearInterval(countTimer);
+  clearInterval(flushTimer);
+  try { chrome.runtime.onMessage.removeListener(onMessage); } catch { /* orphaned context */ }
+  window.__ecouteSeriesLoaded = false;
+};
 })();

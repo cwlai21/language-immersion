@@ -2,8 +2,11 @@
 // Extracts video metadata + language signals and hands them to content.js
 // via a CustomEvent (detail is JSON — objects don't cross world boundaries).
 (() => {
-  if (window.__ecouteBridgeLoaded) return; // double-injection guard
-  window.__ecouteBridgeLoaded = true;
+  // Self-heal re-injects this bridge without a page reload, and the MAIN
+  // world persists across an extension reload — a plain flag guard would
+  // either block the fresh copy or stack duplicate probe timers. Tear the
+  // previous instance down and take over, so exactly one copy is ever live.
+  if (typeof window.__ecouteBridgeTeardown === 'function') window.__ecouteBridgeTeardown();
 
   function getPlayerResponse() {
     // Regular watch pages use #movie_player; Shorts use #shorts-player.
@@ -91,4 +94,9 @@
 
   window.addEventListener('yt-navigate-finish', schedule);
   schedule();
+
+  window.__ecouteBridgeTeardown = () => {
+    clearTimeout(timer);
+    window.removeEventListener('yt-navigate-finish', schedule);
+  };
 })();

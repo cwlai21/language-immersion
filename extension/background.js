@@ -94,13 +94,10 @@ async function healYouTubeTab(tabId) {
     return; // scripts alive in this tab
   } catch { /* no receiver — inject below */ }
   try {
-    // The unresponsive script left its double-injection guard flag set on
-    // `window` (the MAIN world persists across an extension reload, even
-    // though the orphaned script's chrome.* calls are now dead). Clear the
-    // flags before re-injecting, or the fresh scripts would see the stale
-    // flag and silently no-op.
-    await chrome.scripting.executeScript({ target: { tabId }, func: () => { delete window.__ecouteContentLoaded; } });
-    await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: () => { delete window.__ecouteBridgeLoaded; } });
+    // Re-inject. Each script tears any previous copy of itself down as it
+    // loads (__ecouteContentTeardown / __ecouteBridgeTeardown), so this is
+    // safe even when an orphaned instance is still around — no stacked
+    // timers or listeners, no fragmented/duplicated sessions.
     await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
     await chrome.scripting.executeScript({ target: { tabId }, files: ['page-bridge.js'], world: 'MAIN' });
   } catch { /* tab not injectable (discarded, error page, …) */ }

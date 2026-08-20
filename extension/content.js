@@ -3,8 +3,13 @@
 // which decides whether the video counts as French and stores the session.
 
 (() => {
-if (window.__ecouteContentLoaded) return; // double-injection guard
-window.__ecouteContentLoaded = true;
+// Self-heal re-injects this script (see healYouTubeTab) without the page
+// reloading. A plain "already loaded?" flag would leave the previous
+// instance's timers and listeners running — every stacked copy then sends
+// its own heartbeat and finalize, fragmenting one video into many rows and
+// duplicating them. Instead, tear the previous instance down and take over,
+// so exactly one copy is ever live.
+if (typeof window.__ecouteContentTeardown === 'function') window.__ecouteContentTeardown();
 
 let current = null; // { videoId, title, channel, channelId, asrLang, captionLangs }
 let pendingSeconds = 0;
@@ -12,7 +17,7 @@ let pendingSeconds = 0;
 const TICK_SECONDS = 5;
 const FLUSH_MS = 15000;
 
-window.addEventListener('ecoute-videoinfo', (e) => {
+function onVideoInfo(e) {
   flush(); // attribute any buffered seconds to the previous video first
   try {
     current = JSON.parse(e.detail);
@@ -20,15 +25,15 @@ window.addEventListener('ecoute-videoinfo', (e) => {
     current = null;
   }
   flush(); // announce the new video right away so the badge/popup update
-});
+}
 
-window.addEventListener('yt-navigate-finish', () => {
+function onNavigate() {
   if (!location.pathname.startsWith('/watch') && !location.pathname.startsWith('/shorts/')) {
     flush();
     current = null;
     send({ type: 'left-video' });
   }
-});
+}
 
 function getVideoEl() {
   // Shorts pages keep preloaded prev/next <video> elements in the DOM, so
@@ -46,11 +51,9 @@ function isPlaying() {
   return !!(v && !v.paused && !v.ended && v.currentTime > 0);
 }
 
-setInterval(() => {
+function count() {
   if (current && isPlaying()) pendingSeconds += TICK_SECONDS;
-}, TICK_SECONDS * 1000);
-
-setInterval(flush, FLUSH_MS);
+}
 
 function flush() {
   if (!current) return;
@@ -69,12 +72,26 @@ function send(msg) {
 
 // The popup asks the tab what's on screen right now; the worker pings to
 // check the scripts are alive (self-healing injection).
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+function onMessage(msg, _sender, sendResponse) {
   if (msg.type === 'ping') {
     sendResponse({ ok: true });
   }
   if (msg.type === 'get-page-status') {
     sendResponse({ video: current, playing: isPlaying() });
   }
-});
+}
+
+window.addEventListener('ecoute-videoinfo', onVideoInfo);
+window.addEventListener('yt-navigate-finish', onNavigate);
+chrome.runtime.onMessage.addListener(onMessage);
+const countTimer = setInterval(count, TICK_SECONDS * 1000);
+const flushTimer = setInterval(flush, FLUSH_MS);
+
+window.__ecouteContentTeardown = () => {
+  clearInterval(countTimer);
+  clearInterval(flushTimer);
+  window.removeEventListener('ecoute-videoinfo', onVideoInfo);
+  window.removeEventListener('yt-navigate-finish', onNavigate);
+  try { chrome.runtime.onMessage.removeListener(onMessage); } catch { /* orphaned context */ }
+};
 })();
