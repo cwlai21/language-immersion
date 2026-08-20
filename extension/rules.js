@@ -154,6 +154,42 @@ function goalStatusSingle(goal, today) {
   };
 }
 
+// The goal-streak card measures against this flat baseline, not the current
+// daily goal, on purpose: raising the daily goal (e.g. 30 → 60) shouldn't
+// retroactively break a long run of days that cleared the original target.
+// It reads as "days you kept the habit up" rather than "days you hit today's
+// number", so the streak survives a goal bump.
+const STREAK_GOAL_MIN = 30;
+
+// How many days in a row the streak baseline has been met, counting back from
+// today. `filter` follows the dashboard's language filter: 'fr'/'en' check
+// that one language; 'all' requires *both* languages to clear the baseline
+// that day. Today not yet meeting it doesn't break the streak — like the
+// plain day streak, it counts from yesterday in that case, so an in-progress
+// day never reads as a reset. `now` and `threshold` are injectable for tests.
+function goalStreak(sessions, filter, rawNow = new Date(), threshold = STREAK_GOAL_MIN) {
+  const byDay = {}; // { date: { fr: minutes, en: minutes } }
+  for (const s of sessions) {
+    const bucket = byDay[s.date] || (byDay[s.date] = { fr: 0, en: 0 });
+    bucket[sessionLang(s)] += s.seconds / 60;
+  }
+  const met = (date) => {
+    const m = byDay[date];
+    if (!m) return false; // a day with no listening never counts
+    if (filter === 'fr') return m.fr >= threshold;
+    if (filter === 'en') return m.en >= threshold;
+    return m.fr >= threshold && m.en >= threshold;
+  };
+  let streak = 0;
+  const cursor = logicalNow(rawNow);
+  if (!met(dateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+  while (met(dateKey(cursor))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
 // Dual browser/Node: a plain <script> tag in dashboard.html defines these as
 // globals (like lang-detect.js); require('./rules.js') in tests gets them
 // via module.exports. Neither environment sees the other's branch.
@@ -163,5 +199,6 @@ if (typeof module !== 'undefined') {
     minutesByDate, computeStats,
     sessionLang, KNOWN_TYPES, normType, TODO_TYPES, watchKey, startsDone,
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
+    STREAK_GOAL_MIN, goalStreak,
   };
 }

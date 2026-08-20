@@ -9,8 +9,10 @@ const {
   dateKey, logicalNow, todayKey, startOfWeek,
   minutesByDate, computeStats,
   sessionLang, normType, watchKey, startsDone,
-  assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
+  assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle, goalStreak,
 } = require('../rules.js');
+
+const min = (m) => m * 60; // minutes -> seconds, for session fixtures
 
 /* ── startOfWeek: every weekday resets to that week's Monday ── */
 test('startOfWeek resets to Monday for every day of the week', () => {
@@ -199,6 +201,56 @@ test('goalStatusSingle done/pct thresholds', () => {
   assert.equal(goalStatusSingle(30, 29).done, false);
   assert.equal(goalStatusSingle(30, 30).done, true);
   assert.equal(goalStatusSingle(30, 15).pct, 0.5);
+});
+
+/* ── goalStreak: consecutive days clearing the flat 30-min baseline ── */
+const NOW = new Date('2026-08-20T10:00:00'); // logical today = 2026-08-20
+
+test('goalStreak counts consecutive days clearing the baseline in one language', () => {
+  const sessions = [
+    { date: '2026-08-20', language: 'fr', seconds: min(40) },
+    { date: '2026-08-19', language: 'fr', seconds: min(35) },
+    { date: '2026-08-18', language: 'fr', seconds: min(30) }, // exactly the baseline counts
+    { date: '2026-08-16', language: 'fr', seconds: min(90) }, // gap on the 17th
+  ];
+  assert.equal(goalStreak(sessions, 'fr', NOW), 3);
+});
+
+test('goalStreak: an in-progress today below the baseline counts from yesterday, not a reset', () => {
+  const sessions = [
+    { date: '2026-08-20', language: 'fr', seconds: min(20) }, // today, not there yet
+    { date: '2026-08-19', language: 'fr', seconds: min(35) },
+    { date: '2026-08-18', language: 'fr', seconds: min(40) },
+  ];
+  assert.equal(goalStreak(sessions, 'fr', NOW), 2);
+});
+
+test('goalStreak on the All view requires both languages to clear the baseline', () => {
+  const sessions = [
+    { date: '2026-08-20', language: 'fr', seconds: min(40) },
+    { date: '2026-08-20', language: 'en', seconds: min(40) }, // both clear today
+    { date: '2026-08-19', language: 'fr', seconds: min(40) },
+    { date: '2026-08-19', language: 'en', seconds: min(20) }, // en short — breaks it
+  ];
+  assert.equal(goalStreak(sessions, 'all', NOW), 1);
+});
+
+test('goalStreak ignores a raised daily goal — 40 min still clears the 30 baseline', () => {
+  const sessions = [
+    { date: '2026-08-20', language: 'en', seconds: min(40) },
+    { date: '2026-08-19', language: 'en', seconds: min(40) },
+  ];
+  assert.equal(goalStreak(sessions, 'en', NOW), 2);        // default 30 baseline
+  assert.equal(goalStreak(sessions, 'en', NOW, 60), 0);    // if judged against 60, breaks
+});
+
+test('goalStreak treats a day with no listening as a break, never counts empty days', () => {
+  const sessions = [
+    { date: '2026-08-20', language: 'fr', seconds: min(40) },
+    // nothing on 2026-08-19
+    { date: '2026-08-18', language: 'fr', seconds: min(40) },
+  ];
+  assert.equal(goalStreak(sessions, 'fr', NOW), 1);
 });
 
 /* ── minutesByDate / computeStats: shared by the dashboard and the

@@ -378,6 +378,14 @@ function render() {
   document.getElementById('statWeek').textContent = fmtMinutes(stats.week);
   document.getElementById('statMonth').textContent = fmtMinutes(stats.month);
   document.getElementById('statStreak').textContent = `${stats.streak} 🔥`;
+  // Goal streak reads the *unfiltered* sessions — on the All view it needs
+  // both languages' minutes to check each day against the baseline. It uses a
+  // flat STREAK_GOAL_MIN, not the current daily goal, so raising the goal
+  // doesn't retroactively break the run.
+  document.getElementById('statGoalStreak').textContent =
+    `${goalStreak(allSessions, langFilter)} 🎯`;
+  document.getElementById('statGoalStreakSub').textContent =
+    t(langFilter === 'all' ? 'goalStreakSubAll' : 'goalStreakSub');
   document.getElementById('statWeekAvg').textContent = `${fmtMinutes(stats.weekAvg)} ${t('avgPerDay')}`;
   document.getElementById('statMonthAvg').textContent = `${fmtMinutes(stats.monthAvg)} ${t('avgPerDay')}`;
   document.getElementById('statTotal').textContent = `${fmtMinutes(stats.total)} ${t('totalAllTime')}`;
