@@ -159,15 +159,32 @@ function goalStatusSingle(goal, today) {
 // retroactively break a long run of days that cleared the original target.
 // It reads as "days you kept the habit up" rather than "days you hit today's
 // number", so the streak survives a goal bump.
-const STREAK_GOAL_MIN = 30;
+// The daily goal (both languages) over time, in minutes — periods sorted
+// newest-first. It started at 30 and was raised to 60 on 2026-08-08. The goal
+// streak judges each day against the goal that was in effect *that* day, so
+// raising the goal never retroactively breaks a run of days that cleared the
+// earlier target. Add a period here whenever the goal changes again.
+const STREAK_GOAL_HISTORY = [
+  { from: '2026-08-08', min: 60 },
+  { from: '0000-00-00', min: 30 },
+];
 
-// How many days in a row the streak baseline has been met, counting back from
-// today. `filter` follows the dashboard's language filter: 'fr'/'en' check
-// that one language; 'all' requires *both* languages to clear the baseline
-// that day. Today not yet meeting it doesn't break the streak — like the
-// plain day streak, it counts from yesterday in that case, so an in-progress
-// day never reads as a reset. `now` and `threshold` are injectable for tests.
-function goalStreak(sessions, filter, rawNow = new Date(), threshold = STREAK_GOAL_MIN) {
+// The streak goal (minutes) in effect on a given YYYY-MM-DD.
+function streakThreshold(date) {
+  for (const period of STREAK_GOAL_HISTORY) {
+    if (date >= period.from) return period.min;
+  }
+  return STREAK_GOAL_HISTORY[STREAK_GOAL_HISTORY.length - 1].min;
+}
+
+// How many days in a row the goal has been met, counting back from today.
+// `filter` follows the dashboard's language filter: 'fr'/'en' check that one
+// language; 'all' requires *both* languages to clear the goal that day. Today
+// not yet meeting it doesn't break the streak — like the plain day streak, it
+// counts from yesterday in that case, so an in-progress day never reads as a
+// reset. Each day is judged against the goal active on that date (see
+// streakThreshold). `now` and `thresholdFor` are injectable for tests.
+function goalStreak(sessions, filter, rawNow = new Date(), thresholdFor = streakThreshold) {
   const byDay = {}; // { date: { fr: minutes, en: minutes } }
   for (const s of sessions) {
     const bucket = byDay[s.date] || (byDay[s.date] = { fr: 0, en: 0 });
@@ -176,6 +193,7 @@ function goalStreak(sessions, filter, rawNow = new Date(), threshold = STREAK_GO
   const met = (date) => {
     const m = byDay[date];
     if (!m) return false; // a day with no listening never counts
+    const threshold = thresholdFor(date);
     if (filter === 'fr') return m.fr >= threshold;
     if (filter === 'en') return m.en >= threshold;
     return m.fr >= threshold && m.en >= threshold;
@@ -199,6 +217,6 @@ if (typeof module !== 'undefined') {
     minutesByDate, computeStats,
     sessionLang, KNOWN_TYPES, normType, TODO_TYPES, watchKey, startsDone,
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
-    STREAK_GOAL_MIN, goalStreak,
+    STREAK_GOAL_HISTORY, streakThreshold, goalStreak,
   };
 }

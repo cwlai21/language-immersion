@@ -379,9 +379,9 @@ function render() {
   document.getElementById('statMonth').textContent = fmtMinutes(stats.month);
   document.getElementById('statStreak').textContent = `${stats.streak} 🔥`;
   // Goal streak reads the *unfiltered* sessions — on the All view it needs
-  // both languages' minutes to check each day against the baseline. It uses a
-  // flat STREAK_GOAL_MIN, not the current daily goal, so raising the goal
-  // doesn't retroactively break the run.
+  // both languages' minutes to check each day against that day's goal (see
+  // streakThreshold), so raising the daily goal doesn't retroactively break
+  // the run.
   document.getElementById('statGoalStreak').textContent =
     `${goalStreak(allSessions, langFilter)} 🎯`;
   document.getElementById('statGoalStreakSub').textContent =
