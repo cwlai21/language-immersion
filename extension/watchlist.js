@@ -139,11 +139,17 @@ async function refreshStatus() {
 async function runSync(kind) {
   const url = playlistInput.value.trim();
   if (!url) { syncMsg.textContent = '⚠ Colle d\'abord l\'adresse de la playlist.'; return; }
-  await chrome.runtime.sendMessage({ type: 'yt-todo-set-playlist', url });
   syncMsg.textContent = '⏳ Synchronisation…';
   connectBtn.disabled = syncBtn.disabled = true;
   let res;
-  try { res = await chrome.runtime.sendMessage({ type: kind }); } catch (e) { res = { ok: false, reason: String(e) }; }
+  try {
+    await chrome.runtime.sendMessage({ type: 'yt-todo-set-playlist', url });
+    res = await chrome.runtime.sendMessage({ type: kind });
+  } catch (e) {
+    // e.g. "Could not establish connection" = the service worker isn't running
+    // the new code (reload the extension), or it crashed on load.
+    res = { ok: false, reason: String(e && e.message ? e.message : e) };
+  }
   connectBtn.disabled = syncBtn.disabled = false;
   if (res && res.ok) {
     syncMsg.textContent = `✅ ${res.added} ajoutée(s), ${res.removed} retirée(s) de la playlist.`;
