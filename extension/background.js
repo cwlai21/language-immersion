@@ -520,7 +520,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
  * the shared video-todo kv_state list, then deletes it from the playlist.
  * Uses OAuth (chrome.identity) since deleting playlist items is a write. */
 const YT_TODO_KV = 'video-todo';
-const YT_TODO_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+// Listing the playlist is 1 quota unit (of 10,000/day), so polling often is
+// cheap; the 'tick' alarm fires every minute, which is the effective floor.
+const YT_TODO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 let ytTodoSyncing = false;
 
 function ytPlaylistIdFromUrl(url) {
