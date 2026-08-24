@@ -502,6 +502,10 @@ document.getElementById('dashboardBtn').addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
 });
 
+document.getElementById('watchlistBtn').addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('watchlist.html') });
+});
+
 (async function init() {
   const { statsLang: savedStatsLang } = await chrome.storage.sync.get('statsLang');
   if (savedStatsLang) {

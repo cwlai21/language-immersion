@@ -115,6 +115,11 @@ const playlistInput = document.getElementById('playlistUrl');
 const connectBtn = document.getElementById('connectBtn');
 const syncBtn = document.getElementById('syncBtn');
 
+// The OAuth connect/sync runs in the extension's background worker, so it only
+// works when this page is opened *from the extension* (chrome-extension://…),
+// not the GitHub Pages / web copy where chrome.runtime doesn't exist.
+const IN_EXTENSION = typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
+
 function fmtAgo(ts) {
   if (!ts) return 'jamais';
   const m = Math.round((Date.now() - ts) / 60000);
@@ -124,6 +129,13 @@ function fmtAgo(ts) {
 }
 
 async function refreshStatus() {
+  if (!IN_EXTENSION) {
+    document.getElementById('setupStatus').textContent = '';
+    connectBtn.disabled = true;
+    syncBtn.hidden = true;
+    syncMsg.textContent = 'ℹ️ Ouvre cette page depuis l\'extension (icône Écoute → Dashboard → À regarder) pour connecter YouTube. Ici, seule la liste s\'affiche.';
+    return;
+  }
   let st;
   try { st = await chrome.runtime.sendMessage({ type: 'yt-todo-status' }); } catch { return; }
   if (!st) return;
@@ -137,6 +149,10 @@ async function refreshStatus() {
 }
 
 async function runSync(kind) {
+  if (!IN_EXTENSION) {
+    syncMsg.textContent = '⚠ Ouvre cette page depuis l\'extension pour connecter YouTube.';
+    return;
+  }
   const url = playlistInput.value.trim();
   if (!url) { syncMsg.textContent = '⚠ Colle d\'abord l\'adresse de la playlist.'; return; }
   syncMsg.textContent = '⏳ Synchronisation…';
