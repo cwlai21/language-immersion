@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📺 À regarder — Écoute</title>
+  <link rel="icon" type="image/png" href="icons/favicon-64.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="dashboard.css">
+  <style>
+    .wl-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    .wl-count { font-size: 14px; font-weight: 700; color: var(--primary-dark); }
+    .wl-item {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 10px 4px; border-bottom: 1px solid var(--border);
+    }
+    .wl-item:last-child { border-bottom: none; }
+    .wl-item input[type=checkbox] { width: 20px; height: 20px; margin-top: 2px; accent-color: #16a34a; flex-shrink: 0; }
+    .wl-item.done .wl-title { text-decoration: line-through; color: var(--muted); }
+    .wl-title { font-size: 14px; font-weight: 600; }
+    .wl-title a { color: inherit; text-decoration: none; }
+    .wl-title a:hover { color: var(--primary); }
+    .wl-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .wl-flag { font-size: 13px; white-space: nowrap; }
+    .wl-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 6px; }
+    .wl-del:hover { color: #dc2626; }
+    .wl-empty { font-size: 14px; color: var(--muted); padding: 16px 4px; }
+    .wl-actions { display: flex; gap: 8px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-flag"><span></span><span></span><span></span></span>
+      <div>
+        <h1>📺 À regarder</h1>
+        <p class="brand-sub">Les vidéos enregistrées dans ta playlist YouTube, à regarder plus tard 🎧</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <a class="btn btn-ghost" href="dashboard.html">📊 Dashboard</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <div class="wl-header">
+        <h2>Ma liste</h2>
+        <span class="wl-count" id="count"></span>
+      </div>
+      <p class="blurb" style="font-size:13px;color:#6b7280;margin-top:4px">
+        Se remplit automatiquement depuis ta playlist « français » ; ce que tu as déjà
+        suivi n'y apparaît pas. Coche ce que tu as regardé — la liste se synchronise entre tes appareils.
+      </p>
+      <div id="list"></div>
+      <div class="wl-actions">
+        <button class="btn btn-ghost" id="clearDone" hidden>🧹 Retirer les regardés</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="supabase.js"></script>
+  <script src="watchlist.js"></script>
+</body>
+</html>
