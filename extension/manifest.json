@@ -8,10 +8,16 @@
     "storage",
     "alarms",
     "scripting",
-    "notifications"
+    "notifications",
+    "identity"
   ],
+  "oauth2": {
+    "client_id": "379807806742-0g7vu247mguifp0b95vlnsm5ihqlfb08.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/youtube"]
+  },
   "host_permissions": [
     "https://www.youtube.com/*",
+    "https://www.googleapis.com/*",
     "https://iusnuavugqjdaljgdcij.supabase.co/*",
     "https://api.themoviedb.org/*",
     "https://gimytv.biz/*",

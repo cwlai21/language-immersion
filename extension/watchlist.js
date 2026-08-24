@@ -108,7 +108,63 @@ document.getElementById('clearDone').addEventListener('click', () => {
   }).then(render);
 });
 
+/* ── Playlist connect / sync (talks to the background worker, which owns
+ * the OAuth token and the YouTube API calls) ── */
+const syncMsg = document.getElementById('syncMsg');
+const playlistInput = document.getElementById('playlistUrl');
+const connectBtn = document.getElementById('connectBtn');
+const syncBtn = document.getElementById('syncBtn');
+
+function fmtAgo(ts) {
+  if (!ts) return 'jamais';
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 1) return "à l'instant";
+  if (m < 60) return `il y a ${m} min`;
+  return `il y a ${Math.round(m / 60)} h`;
+}
+
+async function refreshStatus() {
+  let st;
+  try { st = await chrome.runtime.sendMessage({ type: 'yt-todo-status' }); } catch { return; }
+  if (!st) return;
+  if (st.playlistId && !playlistInput.value) {
+    playlistInput.value = `https://www.youtube.com/playlist?list=${st.playlistId}`;
+  }
+  document.getElementById('setupStatus').textContent = st.connected ? '✅ connecté' : '';
+  syncBtn.hidden = !st.connected;
+  connectBtn.textContent = st.connected ? '🔗 Reconnecter' : '🔗 Connecter & synchroniser';
+  if (st.connected && st.lastSync) syncMsg.textContent = `Dernière synchro ${fmtAgo(st.lastSync)}.`;
+}
+
+async function runSync(kind) {
+  const url = playlistInput.value.trim();
+  if (!url) { syncMsg.textContent = '⚠ Colle d\'abord l\'adresse de la playlist.'; return; }
+  await chrome.runtime.sendMessage({ type: 'yt-todo-set-playlist', url });
+  syncMsg.textContent = '⏳ Synchronisation…';
+  connectBtn.disabled = syncBtn.disabled = true;
+  let res;
+  try { res = await chrome.runtime.sendMessage({ type: kind }); } catch (e) { res = { ok: false, reason: String(e) }; }
+  connectBtn.disabled = syncBtn.disabled = false;
+  if (res && res.ok) {
+    syncMsg.textContent = `✅ ${res.added} ajoutée(s), ${res.removed} retirée(s) de la playlist.`;
+    await loadTodo();
+    render();
+  } else {
+    const reason = res && res.reason;
+    syncMsg.textContent = reason === 'no-auth'
+      ? '⚠ Connexion YouTube refusée ou annulée.'
+      : reason === 'no-playlist'
+        ? '⚠ Adresse de playlist invalide.'
+        : `⚠ Échec de la synchro${reason ? ' : ' + reason : ''}.`;
+  }
+  await refreshStatus();
+}
+
+connectBtn.addEventListener('click', () => runSync('yt-todo-connect'));
+syncBtn.addEventListener('click', () => runSync('yt-todo-sync'));
+
 (async function init() {
   await loadTodo();
   render();
+  await refreshStatus();
 })();

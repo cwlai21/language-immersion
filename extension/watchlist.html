@@ -43,6 +43,24 @@
   </header>
 
   <main class="container">
+    <section class="card" id="setup">
+      <div class="wl-header">
+        <h2>Playlist YouTube</h2>
+        <span class="wl-count" id="setupStatus"></span>
+      </div>
+      <p class="blurb" style="font-size:13px;color:#6b7280;margin:4px 0 10px">
+        Colle l'adresse de ta playlist « français », connecte ton compte YouTube une fois,
+        et l'extension importera les nouvelles vidéos toutes les ~15 min (puis les retirera de la playlist).
+      </p>
+      <input type="text" id="playlistUrl" class="input" style="width:100%;margin-bottom:8px"
+             placeholder="https://www.youtube.com/playlist?list=…">
+      <div class="wl-actions" style="margin-top:0">
+        <button class="btn btn-primary" id="connectBtn">🔗 Connecter &amp; synchroniser</button>
+        <button class="btn btn-ghost" id="syncBtn" hidden>🔄 Synchroniser</button>
+      </div>
+      <p class="wl-meta" id="syncMsg" style="margin-top:8px"></p>
+    </section>
+
     <section class="card">
       <div class="wl-header">
         <h2>Ma liste</h2>

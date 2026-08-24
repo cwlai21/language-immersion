@@ -3,7 +3,7 @@
 // offline retry queue). All state lives in chrome.storage.local because MV3
 // workers unload at any time.
 
-importScripts('config.js', 'supabase.js', 'lang-detect.js', 'tmdb.js', 'series-rules.js', 'session-rules.js');
+importScripts('config.js', 'supabase.js', 'lang-detect.js', 'tmdb.js', 'series-rules.js', 'session-rules.js', 'youtube-todo-rules.js');
 // Optional personal TMDB key from git-ignored config.local.js. Don't
 // importScripts it: on checkouts without the file some Chrome versions fail
 // the whole service-worker registration ("An unknown error occurred when
@@ -224,6 +224,10 @@ async function handle(msg, sender) {
     case 'series-heartbeat': return onSeriesHeartbeat(msg, sender);
     case 'set-series-lang': return setSeriesLang(msg.name, msg.lang);
     case 'heal-tab': return healTab(msg.tabId);
+    case 'yt-todo-status': return ytTodoStatus();
+    case 'yt-todo-set-playlist': return ytTodoSetPlaylist(msg.url);
+    case 'yt-todo-connect': return syncYoutubeTodo(true);
+    case 'yt-todo-sync': return syncYoutubeTodo(true);
     default: return { error: 'unknown message: ' + msg.type };
   }
 }
@@ -508,7 +512,171 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await flushShortsBuffer(shortsBuffer);
   }
   if (pendingRows.length) await syncPending();
+  await maybeSyncYoutubeTodo();
 });
+
+/* ── YouTube "À regarder" playlist sync ──────────────────────────
+ * Reads the configured YouTube playlist, adds any not-yet-watched video to
+ * the shared video-todo kv_state list, then deletes it from the playlist.
+ * Uses OAuth (chrome.identity) since deleting playlist items is a write. */
+const YT_TODO_KV = 'video-todo';
+const YT_TODO_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+let ytTodoSyncing = false;
+
+function ytPlaylistIdFromUrl(url) {
+  if (!url) return '';
+  const m = String(url).match(/[?&]list=([\w-]+)/);
+  return m ? m[1] : String(url).trim(); // allow pasting a bare id too
+}
+
+function ytGetToken(interactive) {
+  return new Promise((resolve) => {
+    try {
+      chrome.identity.getAuthToken({ interactive }, (token) => {
+        resolve(chrome.runtime.lastError || !token ? null : token);
+      });
+    } catch { resolve(null); }
+  });
+}
+
+async function ytApi(path, token, opts = {}) {
+  const res = await fetch(`https://www.googleapis.com/youtube/v3/${path}`, {
+    ...opts,
+    headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+  });
+  if (res.status === 401) { const e = new Error('unauthorized'); e.status = 401; throw e; }
+  if (!res.ok) throw new Error(`youtube ${res.status}: ${await res.text()}`);
+  return res.status === 204 ? null : res.json();
+}
+
+async function ytListPlaylist(playlistId, token) {
+  const items = [];
+  let pageToken = '';
+  do {
+    const data = await ytApi(
+      `playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}` +
+        (pageToken ? `&pageToken=${pageToken}` : ''),
+      token,
+    );
+    for (const it of data.items || []) {
+      const sn = it.snippet || {};
+      const videoId = sn.resourceId && sn.resourceId.videoId;
+      if (!videoId) continue;
+      items.push({
+        videoId,
+        title: sn.title || '',
+        channel: sn.videoOwnerChannelTitle || '',
+        playlistItemId: it.id,
+      });
+    }
+    pageToken = data.nextPageToken || '';
+  } while (pageToken);
+  return items;
+}
+
+// Which of these videoIds the user has already tracked/watched (so we don't
+// re-add them). Queried in chunks to keep the URL short.
+async function ytTrackedVideoIds(videoIds) {
+  const tracked = new Set();
+  for (let i = 0; i < videoIds.length; i += 100) {
+    const chunk = videoIds.slice(i, i + 100).map((v) => `"${v}"`).join(',');
+    try {
+      const rows = await sbRequest(`listening_sessions?select=video_id&video_id=in.(${chunk})`);
+      for (const r of rows) if (r.video_id) tracked.add(r.video_id);
+    } catch { /* offline — treat as none tracked; a re-add is harmless, it'll be re-removed */ }
+  }
+  return tracked;
+}
+
+async function ytTodoLoad() {
+  try {
+    const rows = await sbRequest(`kv_state?key=eq.${YT_TODO_KV}&select=value`);
+    return rows.length ? JSON.parse(rows[0].value) : {};
+  } catch { return {}; }
+}
+
+async function ytTodoSave(todo) {
+  await sbRequest('kv_state?on_conflict=key', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates' },
+    body: { key: YT_TODO_KV, value: JSON.stringify(todo), updated_at: new Date().toISOString() },
+  });
+}
+
+async function ytTodoStatus() {
+  const { ytTodoPlaylistId } = await chrome.storage.sync.get('ytTodoPlaylistId');
+  const { ytTodoLastSync } = await chrome.storage.local.get('ytTodoLastSync');
+  const token = await ytGetToken(false); // cached only — never prompts
+  return { connected: !!token, playlistId: ytTodoPlaylistId || '', lastSync: ytTodoLastSync || 0 };
+}
+
+async function ytTodoSetPlaylist(url) {
+  const id = ytPlaylistIdFromUrl(url);
+  await chrome.storage.sync.set({ ytTodoPlaylistId: id });
+  return { ok: !!id, playlistId: id };
+}
+
+// interactive=true is allowed to pop the OAuth consent; false is the silent
+// background poll (uses a cached token, no prompt).
+async function syncYoutubeTodo(interactive = false) {
+  const { ytTodoPlaylistId } = await chrome.storage.sync.get('ytTodoPlaylistId');
+  if (!ytTodoPlaylistId) return { ok: false, reason: 'no-playlist' };
+  if (ytTodoSyncing) return { ok: false, reason: 'busy' };
+  ytTodoSyncing = true;
+  try {
+    let token = await ytGetToken(interactive);
+    if (!token) return { ok: false, reason: 'no-auth' };
+
+    const listOnce = () => ytListPlaylist(ytTodoPlaylistId, token);
+    let items;
+    try {
+      items = await listOnce();
+    } catch (e) {
+      if (e.status === 401) { // cached token went stale — drop it and retry once
+        await new Promise((r) => chrome.identity.removeCachedAuthToken({ token }, r));
+        token = await ytGetToken(interactive);
+        if (!token) return { ok: false, reason: 'no-auth' };
+        items = await ytListPlaylist(ytTodoPlaylistId, token);
+      } else {
+        throw e;
+      }
+    }
+
+    const tracked = await ytTrackedVideoIds(items.map((i) => i.videoId));
+    const current = await ytTodoLoad();
+    const { toAdd, removeItemIds } = planYoutubeTodoSync(items, tracked, current, 'fr');
+
+    if (Object.keys(toAdd).length) {
+      const merged = await ytTodoLoad(); // re-read to merge with any concurrent edits
+      Object.assign(merged, toAdd); // toAdd only holds new ids, so done-states are safe
+      await ytTodoSave(merged);
+    }
+
+    let removed = 0;
+    for (const id of removeItemIds) {
+      try { await ytApi(`playlistItems?id=${encodeURIComponent(id)}`, token, { method: 'DELETE' }); removed++; }
+      catch (e) { console.warn('[ecoute] yt playlist delete failed', id, e); }
+    }
+
+    await chrome.storage.local.set({ ytTodoLastSync: Date.now() });
+    return { ok: true, added: Object.keys(toAdd).length, removed };
+  } catch (e) {
+    console.warn('[ecoute] syncYoutubeTodo failed', e);
+    return { ok: false, reason: String(e) };
+  } finally {
+    ytTodoSyncing = false;
+  }
+}
+
+// Background poll: only runs once connected (a cached token exists) and no more
+// than every YT_TODO_SYNC_INTERVAL_MS.
+async function maybeSyncYoutubeTodo() {
+  const { ytTodoPlaylistId } = await chrome.storage.sync.get('ytTodoPlaylistId');
+  if (!ytTodoPlaylistId) return;
+  const { ytTodoLastSync = 0 } = await chrome.storage.local.get('ytTodoLastSync');
+  if (Date.now() - ytTodoLastSync < YT_TODO_SYNC_INTERVAL_MS) return;
+  await syncYoutubeTodo(false);
+}
 
 // Untitled rows are never stored: they park in the retry queue, where each
 // sync tick tries to recover a title (TITLE_RETRIES attempts) before the row
