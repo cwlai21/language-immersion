@@ -569,6 +569,7 @@ async function ytListPlaylist(playlistId, token) {
         title: sn.title || '',
         channel: sn.videoOwnerChannelTitle || '',
         playlistItemId: it.id,
+        position: typeof sn.position === 'number' ? sn.position : 0,
       });
     }
     pageToken = data.nextPageToken || '';

@@ -21,6 +21,15 @@ test('a new, unwatched video is imported and scheduled for removal', () => {
   assert.deepEqual(removeItemIds, ['PI1']);
 });
 
+test('addedAt folds in the playlist position so a later-added video sorts first', () => {
+  const { toAdd } = planYoutubeTodoSync(
+    [item('OLD', 'PIa', { position: 0 }), item('NEW', 'PIb', { position: 5 })],
+    new Set(), {}, 'fr', 1000,
+  );
+  assert.equal(toAdd.OLD.addedAt, 1000);
+  assert.equal(toAdd.NEW.addedAt, 1005); // higher position → higher addedAt → top of a newest-first list
+});
+
 test('an already-watched video is left alone (not imported, not removed)', () => {
   const { toAdd, removeItemIds } = planYoutubeTodoSync(
     [item('V1', 'PI1')], new Set(['V1']), {},

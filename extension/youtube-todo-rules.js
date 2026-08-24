@@ -9,9 +9,12 @@
 //     it from the playlist.
 //   - not watched but already in the todo (a previous removal didn't land) →
 //     don't re-import, just remove it from the playlist again.
-// `items` are { videoId, title, channel, playlistItemId } from the YouTube API.
-// Returns { toAdd: { [videoId]: entry }, removeItemIds: [playlistItemId] } and
-// never mutates its inputs.
+// `items` are { videoId, title, channel, playlistItemId, position } from the
+// YouTube API (position = index in the playlist; new saves append, so a higher
+// position is more recently added). addedAt folds in the position so the list,
+// sorted newest-first, shows the last-added video at the top even when a whole
+// batch imports in one sync. Returns { toAdd: { [videoId]: entry },
+// removeItemIds: [playlistItemId] } and never mutates its inputs.
 function planYoutubeTodoSync(items, trackedVideoIds, currentTodo, lang = 'fr', now = Date.now()) {
   const toAdd = {};
   const removeItemIds = [];
@@ -24,7 +27,7 @@ function planYoutubeTodoSync(items, trackedVideoIds, currentTodo, lang = 'fr', n
         title: it.title || '',
         channel: it.channel || '',
         lang,
-        addedAt: now,
+        addedAt: now + (it.position || 0),
         done: false,
       };
     }
