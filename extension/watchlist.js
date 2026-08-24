@@ -109,9 +109,10 @@ document.getElementById('clearDone').addEventListener('click', () => {
 });
 
 /* ── Playlist connect / sync (talks to the background worker, which owns
- * the OAuth token and the YouTube API calls) ── */
+ * the OAuth token and the YouTube API calls). Several playlists are supported,
+ * each with its own language tag. ── */
 const syncMsg = document.getElementById('syncMsg');
-const playlistInput = document.getElementById('playlistUrl');
+const playlistsEl = document.getElementById('playlists');
 const connectBtn = document.getElementById('connectBtn');
 const syncBtn = document.getElementById('syncBtn');
 
@@ -128,19 +129,58 @@ function fmtAgo(ts) {
   return `il y a ${Math.round(m / 60)} h`;
 }
 
+function addPlaylistRow(url = '', lang = 'fr') {
+  const row = document.createElement('div');
+  row.className = 'wl-pl-row';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'input';
+  input.placeholder = 'https://www.youtube.com/playlist?list=…';
+  input.value = url;
+
+  const sel = document.createElement('select');
+  sel.className = 'input';
+  for (const [code, label] of [['fr', '🇫🇷'], ['en', '🇬🇧']]) {
+    const opt = document.createElement('option');
+    opt.value = code; opt.textContent = label; sel.appendChild(opt);
+  }
+  sel.value = lang === 'en' ? 'en' : 'fr';
+
+  const del = document.createElement('button');
+  del.className = 'wl-pl-del';
+  del.textContent = '✕';
+  del.title = 'Retirer cette playlist';
+  del.onclick = () => { row.remove(); if (!playlistsEl.children.length) addPlaylistRow(); };
+
+  row.append(input, sel, del);
+  playlistsEl.appendChild(row);
+}
+
+// [{ url, lang }] from the visible rows (skips blank ones).
+function gatherPlaylists() {
+  return [...playlistsEl.querySelectorAll('.wl-pl-row')]
+    .map((r) => ({ url: r.querySelector('input').value.trim(), lang: r.querySelector('select').value }))
+    .filter((p) => p.url);
+}
+
 async function refreshStatus() {
   if (!IN_EXTENSION) {
     document.getElementById('setupStatus').textContent = '';
     connectBtn.disabled = true;
     syncBtn.hidden = true;
+    if (!playlistsEl.children.length) addPlaylistRow();
     syncMsg.textContent = 'ℹ️ Ouvre cette page depuis l\'extension (icône Écoute → Dashboard → À regarder) pour connecter YouTube. Ici, seule la liste s\'affiche.';
     return;
   }
   let st;
   try { st = await chrome.runtime.sendMessage({ type: 'yt-todo-status' }); } catch { return; }
   if (!st) return;
-  if (st.playlistId && !playlistInput.value) {
-    playlistInput.value = `https://www.youtube.com/playlist?list=${st.playlistId}`;
+  // Populate rows from the stored playlists (only if the user hasn't started editing).
+  if (!playlistsEl.children.length) {
+    const pls = (st.playlists || []);
+    if (pls.length) for (const p of pls) addPlaylistRow(`https://www.youtube.com/playlist?list=${p.id}`, p.lang);
+    else addPlaylistRow();
   }
   document.getElementById('setupStatus').textContent = st.connected ? '✅ connecté' : '';
   syncBtn.hidden = !st.connected;
@@ -153,13 +193,13 @@ async function runSync(kind) {
     syncMsg.textContent = '⚠ Ouvre cette page depuis l\'extension pour connecter YouTube.';
     return;
   }
-  const url = playlistInput.value.trim();
-  if (!url) { syncMsg.textContent = '⚠ Colle d\'abord l\'adresse de la playlist.'; return; }
+  const playlists = gatherPlaylists();
+  if (!playlists.length) { syncMsg.textContent = '⚠ Ajoute d\'abord au moins une playlist.'; return; }
   syncMsg.textContent = '⏳ Synchronisation…';
   connectBtn.disabled = syncBtn.disabled = true;
   let res;
   try {
-    await chrome.runtime.sendMessage({ type: 'yt-todo-set-playlist', url });
+    await chrome.runtime.sendMessage({ type: 'yt-todo-set-playlists', playlists });
     res = await chrome.runtime.sendMessage({ type: kind });
   } catch (e) {
     // e.g. "Could not establish connection" = the service worker isn't running
@@ -168,7 +208,8 @@ async function runSync(kind) {
   }
   connectBtn.disabled = syncBtn.disabled = false;
   if (res && res.ok) {
-    syncMsg.textContent = `✅ ${res.added} ajoutée(s), ${res.removed} retirée(s) de la playlist.`;
+    const failNote = res.failed ? ` (${res.failed} playlist(s) illisible(s))` : '';
+    syncMsg.textContent = `✅ ${res.added} ajoutée(s), ${res.removed} retirée(s)${failNote}.`;
     await loadTodo();
     render();
   } else {
@@ -176,12 +217,13 @@ async function runSync(kind) {
     syncMsg.textContent = reason === 'no-auth'
       ? '⚠ Connexion YouTube refusée ou annulée.'
       : reason === 'no-playlist'
-        ? '⚠ Adresse de playlist invalide.'
+        ? '⚠ Aucune playlist valide.'
         : `⚠ Échec de la synchro${reason ? ' : ' + reason : ''}.`;
   }
   await refreshStatus();
 }
 
+document.getElementById('addPlaylist').addEventListener('click', () => addPlaylistRow());
 connectBtn.addEventListener('click', () => runSync('yt-todo-connect'));
 syncBtn.addEventListener('click', () => runSync('yt-todo-sync'));
 

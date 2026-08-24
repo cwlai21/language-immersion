@@ -225,7 +225,7 @@ async function handle(msg, sender) {
     case 'set-series-lang': return setSeriesLang(msg.name, msg.lang);
     case 'heal-tab': return healTab(msg.tabId);
     case 'yt-todo-status': return ytTodoStatus();
-    case 'yt-todo-set-playlist': return ytTodoSetPlaylist(msg.url);
+    case 'yt-todo-set-playlists': return ytTodoSetPlaylists(msg.playlists);
     case 'yt-todo-connect': return syncYoutubeTodo(true);
     case 'yt-todo-sync': return syncYoutubeTodo(true);
     default: return { error: 'unknown message: ' + msg.type };
@@ -606,63 +606,97 @@ async function ytTodoSave(todo) {
   });
 }
 
-async function ytTodoStatus() {
-  const { ytTodoPlaylistId } = await chrome.storage.sync.get('ytTodoPlaylistId');
-  const { ytTodoLastSync } = await chrome.storage.local.get('ytTodoLastSync');
-  const token = await ytGetToken(false); // cached only — never prompts
-  return { connected: !!token, playlistId: ytTodoPlaylistId || '', lastSync: ytTodoLastSync || 0 };
+// The configured playlists as [{ id, lang }]. Migrates the old single
+// ytTodoPlaylistId (always French) into the list on first read.
+async function ytTodoGetPlaylists() {
+  const { ytTodoPlaylists, ytTodoPlaylistId } =
+    await chrome.storage.sync.get(['ytTodoPlaylists', 'ytTodoPlaylistId']);
+  if (Array.isArray(ytTodoPlaylists)) return ytTodoPlaylists.filter((p) => p && p.id);
+  if (ytTodoPlaylistId) {
+    const migrated = [{ id: ytTodoPlaylistId, lang: 'fr' }];
+    await chrome.storage.sync.set({ ytTodoPlaylists: migrated });
+    await chrome.storage.sync.remove('ytTodoPlaylistId');
+    return migrated;
+  }
+  return [];
 }
 
-async function ytTodoSetPlaylist(url) {
-  const id = ytPlaylistIdFromUrl(url);
-  await chrome.storage.sync.set({ ytTodoPlaylistId: id });
-  return { ok: !!id, playlistId: id };
+async function ytTodoStatus() {
+  const playlists = await ytTodoGetPlaylists();
+  const { ytTodoLastSync } = await chrome.storage.local.get('ytTodoLastSync');
+  const token = await ytGetToken(false); // cached only — never prompts
+  return { connected: !!token, playlists, lastSync: ytTodoLastSync || 0 };
+}
+
+// `list` is [{ url, lang }] from the page; store the parsed [{ id, lang }].
+async function ytTodoSetPlaylists(list) {
+  const playlists = (Array.isArray(list) ? list : [])
+    .map((p) => ({ id: ytPlaylistIdFromUrl(p.url), lang: p.lang === 'en' ? 'en' : 'fr' }))
+    .filter((p) => p.id);
+  await chrome.storage.sync.set({ ytTodoPlaylists: playlists });
+  return { ok: true, count: playlists.length };
 }
 
 // interactive=true is allowed to pop the OAuth consent; false is the silent
-// background poll (uses a cached token, no prompt).
+// background poll (uses a cached token, no prompt). Each playlist keeps its
+// own language; a broken/removed playlist is skipped without stopping the rest.
 async function syncYoutubeTodo(interactive = false) {
-  const { ytTodoPlaylistId } = await chrome.storage.sync.get('ytTodoPlaylistId');
-  if (!ytTodoPlaylistId) return { ok: false, reason: 'no-playlist' };
+  const playlists = await ytTodoGetPlaylists();
+  if (!playlists.length) return { ok: false, reason: 'no-playlist' };
   if (ytTodoSyncing) return { ok: false, reason: 'busy' };
   ytTodoSyncing = true;
   try {
     let token = await ytGetToken(interactive);
     if (!token) return { ok: false, reason: 'no-auth' };
 
-    const listOnce = () => ytListPlaylist(ytTodoPlaylistId, token);
-    let items;
-    try {
-      items = await listOnce();
-    } catch (e) {
-      if (e.status === 401) { // cached token went stale — drop it and retry once
+    // List a playlist, refreshing the token once if it went stale (401).
+    const listPlaylist = async (id) => {
+      try {
+        return await ytListPlaylist(id, token);
+      } catch (e) {
+        if (e.status !== 401) throw e;
         await new Promise((r) => chrome.identity.removeCachedAuthToken({ token }, r));
         token = await ytGetToken(interactive);
-        if (!token) return { ok: false, reason: 'no-auth' };
-        items = await ytListPlaylist(ytTodoPlaylistId, token);
-      } else {
-        throw e;
+        if (!token) { const err = new Error('no-auth'); err.noAuth = true; throw err; }
+        return ytListPlaylist(id, token);
       }
+    };
+
+    const current = await ytTodoLoad();
+    const allToAdd = {};
+    const allRemove = [];
+    let failed = 0;
+    for (const pl of playlists) {
+      let items;
+      try {
+        items = await listPlaylist(pl.id);
+      } catch (e) {
+        if (e.noAuth) return { ok: false, reason: 'no-auth' };
+        failed++;
+        console.warn('[ecoute] yt list failed for playlist', pl.id, e);
+        continue;
+      }
+      const tracked = await ytTrackedVideoIds(items.map((i) => i.videoId));
+      const seen = { ...current, ...allToAdd }; // dedupe across playlists too
+      const { toAdd, removeItemIds } = planYoutubeTodoSync(items, tracked, seen, pl.lang);
+      Object.assign(allToAdd, toAdd);
+      for (const id of removeItemIds) allRemove.push(id);
     }
 
-    const tracked = await ytTrackedVideoIds(items.map((i) => i.videoId));
-    const current = await ytTodoLoad();
-    const { toAdd, removeItemIds } = planYoutubeTodoSync(items, tracked, current, 'fr');
-
-    if (Object.keys(toAdd).length) {
+    if (Object.keys(allToAdd).length) {
       const merged = await ytTodoLoad(); // re-read to merge with any concurrent edits
-      Object.assign(merged, toAdd); // toAdd only holds new ids, so done-states are safe
+      Object.assign(merged, allToAdd); // allToAdd only holds new ids, so done-states are safe
       await ytTodoSave(merged);
     }
 
     let removed = 0;
-    for (const id of removeItemIds) {
+    for (const id of allRemove) {
       try { await ytApi(`playlistItems?id=${encodeURIComponent(id)}`, token, { method: 'DELETE' }); removed++; }
       catch (e) { console.warn('[ecoute] yt playlist delete failed', id, e); }
     }
 
     await chrome.storage.local.set({ ytTodoLastSync: Date.now() });
-    return { ok: true, added: Object.keys(toAdd).length, removed };
+    return { ok: true, added: Object.keys(allToAdd).length, removed, failed };
   } catch (e) {
     console.warn('[ecoute] syncYoutubeTodo failed', e);
     return { ok: false, reason: String(e) };
@@ -674,8 +708,8 @@ async function syncYoutubeTodo(interactive = false) {
 // Background poll: only runs once connected (a cached token exists) and no more
 // than every YT_TODO_SYNC_INTERVAL_MS.
 async function maybeSyncYoutubeTodo() {
-  const { ytTodoPlaylistId } = await chrome.storage.sync.get('ytTodoPlaylistId');
-  if (!ytTodoPlaylistId) return;
+  const playlists = await ytTodoGetPlaylists();
+  if (!playlists.length) return;
   const { ytTodoLastSync = 0 } = await chrome.storage.local.get('ytTodoLastSync');
   if (Date.now() - ytTodoLastSync < YT_TODO_SYNC_INTERVAL_MS) return;
   await syncYoutubeTodo(false);

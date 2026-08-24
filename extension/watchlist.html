@@ -32,6 +32,11 @@
     .wl-setup summary::before { content: '▸'; display: inline-block; transition: transform .15s ease; color: var(--muted); }
     .wl-setup[open] summary::before { transform: rotate(90deg); }
     .wl-setup-body { margin-top: 12px; }
+    .wl-pl-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .wl-pl-row .input { flex: 1; }
+    .wl-pl-row select.input { flex: 0 0 auto; }
+    .wl-pl-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 2px 6px; }
+    .wl-pl-del:hover { color: #dc2626; }
   </style>
 </head>
 <body>
@@ -72,8 +77,8 @@
           et l'extension importera les nouvelles vidéos toutes les ~5 min (puis les retirera de la playlist).
           Reviens ici pour resynchroniser ou changer de playlist.
         </p>
-        <input type="text" id="playlistUrl" class="input" style="width:100%;margin-bottom:8px"
-               placeholder="https://www.youtube.com/playlist?list=…">
+        <div id="playlists"></div>
+        <button class="btn btn-ghost" id="addPlaylist" style="margin-bottom:10px">＋ Ajouter une playlist</button>
         <div class="wl-actions" style="margin-top:0">
           <button class="btn btn-primary" id="connectBtn">🔗 Connecter &amp; synchroniser</button>
           <button class="btn btn-ghost" id="syncBtn" hidden>🔄 Synchroniser</button>
