@@ -626,12 +626,17 @@ async function ytBackfillDurations(token) {
 
 // Which of these videoIds the user has already tracked/watched — they still get
 // imported, but pre-ticked. Queried in chunks to keep the URL short.
+// source=import rows are excluded on purpose: the July 2026 watch-history
+// backfill logged 345 videos at full length in one go, including things that
+// were only ever opened, so trusting it would tick videos you've never seen.
 async function ytTrackedVideoIds(videoIds) {
   const tracked = new Set();
   for (let i = 0; i < videoIds.length; i += 100) {
     const chunk = videoIds.slice(i, i + 100).map((v) => `"${v}"`).join(',');
     try {
-      const rows = await sbRequest(`listening_sessions?select=video_id&video_id=in.(${chunk})`);
+      const rows = await sbRequest(
+        `listening_sessions?select=video_id&source=neq.import&video_id=in.(${chunk})`,
+      );
       for (const r of rows) if (r.video_id) tracked.add(r.video_id);
     } catch { /* offline — treat as none tracked; a re-add is harmless, it'll be re-removed */ }
   }
