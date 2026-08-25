@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { planYoutubeTodoSync } = require('../youtube-todo-rules.js');
+const { planYoutubeTodoSync, parseIsoDuration, formatDuration } = require('../youtube-todo-rules.js');
 
 const item = (videoId, playlistItemId, extra = {}) =>
   ({ videoId, playlistItemId, title: 't-' + videoId, channel: 'c', ...extra });
@@ -28,6 +28,18 @@ test('addedAt folds in the playlist position so a later-added video sorts first'
   );
   assert.equal(toAdd.OLD.addedAt, 1000);
   assert.equal(toAdd.NEW.addedAt, 1005); // higher position → higher addedAt → top of a newest-first list
+});
+
+test('a video length rides along into the todo entry', () => {
+  const { toAdd } = planYoutubeTodoSync(
+    [item('V1', 'PI1', { durationSec: 754 })], new Set(), {}, 'fr', 1000,
+  );
+  assert.equal(toAdd.V1.durationSec, 754);
+});
+
+test('an unknown video length is recorded as null, not dropped', () => {
+  const { toAdd } = planYoutubeTodoSync([item('V1', 'PI1')], new Set(), {}, 'fr', 1000);
+  assert.equal(toAdd.V1.durationSec, null);
 });
 
 test('an already-watched video is left alone (not imported, not removed)', () => {
@@ -70,4 +82,28 @@ test('planYoutubeTodoSync does not mutate its inputs', () => {
   planYoutubeTodoSync([item('V1', 'PI1')], tracked, current, 'fr', 1000);
   assert.deepEqual(current, { X: { videoId: 'X', done: true } });
   assert.deepEqual([...tracked], ['X']);
+});
+
+test('parseIsoDuration reads the YouTube duration format', () => {
+  assert.equal(parseIsoDuration('PT34S'), 34);
+  assert.equal(parseIsoDuration('PT12M34S'), 754);
+  assert.equal(parseIsoDuration('PT1H2M3S'), 3723);
+  assert.equal(parseIsoDuration('PT2H'), 7200);
+  assert.equal(parseIsoDuration('P1DT1H'), 90000);
+  assert.equal(parseIsoDuration('PT1M30.5S'), 91); // fractional seconds round
+});
+
+test('parseIsoDuration returns null when there is no real length', () => {
+  assert.equal(parseIsoDuration('P0D'), null); // live stream
+  assert.equal(parseIsoDuration(''), null);
+  assert.equal(parseIsoDuration(undefined), null);
+  assert.equal(parseIsoDuration('garbage'), null);
+});
+
+test('formatDuration labels lengths the way YouTube does', () => {
+  assert.equal(formatDuration(34), '0:34');
+  assert.equal(formatDuration(754), '12:34');
+  assert.equal(formatDuration(3903), '1:05:03');
+  assert.equal(formatDuration(0), '');
+  assert.equal(formatDuration(null), '');
 });

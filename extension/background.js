@@ -577,6 +577,52 @@ async function ytListPlaylist(playlistId, token) {
   return items;
 }
 
+// videoId → length in seconds, for the videos we're about to import. `videos`
+// costs 1 quota unit per call (up to 50 ids), same as listing the playlist.
+// A failed chunk just leaves those durations unknown — the list still works.
+async function ytFetchDurations(videoIds, token) {
+  const byId = new Map();
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const chunk = videoIds.slice(i, i + 50);
+    try {
+      const data = await ytApi(
+        `videos?part=contentDetails&id=${encodeURIComponent(chunk.join(','))}`, token,
+      );
+      for (const v of data.items || []) {
+        const sec = parseIsoDuration(v.contentDetails && v.contentDetails.duration);
+        if (sec) byId.set(v.id, sec);
+      }
+    } catch (e) { console.warn('[ecoute] yt durations failed', e); }
+  }
+  return byId;
+}
+
+// Fill in lengths for videos imported before durations were tracked, so the
+// existing list catches up instead of staying blank forever. Bounded so a big
+// backlog can't burn the daily quota in one sync.
+const YT_DURATION_BACKFILL_MAX = 200;
+
+async function ytBackfillDurations(token) {
+  const todo = await ytTodoLoad();
+  const missing = Object.values(todo)
+    .filter((v) => v && v.videoId && v.durationSec == null)
+    .map((v) => v.videoId)
+    .slice(0, YT_DURATION_BACKFILL_MAX);
+  if (!missing.length) return 0;
+  const durations = await ytFetchDurations(missing, token);
+  const merged = await ytTodoLoad(); // re-read: the import above may have just written
+  let filled = 0;
+  for (const id of missing) {
+    if (!merged[id]) continue;
+    // Record 0 for the ones YouTube gave no length for (live, deleted), so we
+    // don't re-query them on every single sync.
+    merged[id].durationSec = durations.get(id) || 0;
+    filled++;
+  }
+  if (filled) await ytTodoSave(merged);
+  return filled;
+}
+
 // Which of these videoIds the user has already tracked/watched (so we don't
 // re-add them). Queried in chunks to keep the URL short.
 async function ytTrackedVideoIds(videoIds) {
@@ -678,6 +724,8 @@ async function syncYoutubeTodo(interactive = false) {
       }
       const tracked = await ytTrackedVideoIds(items.map((i) => i.videoId));
       const seen = { ...current, ...allToAdd }; // dedupe across playlists too
+      const durations = await ytFetchDurations(items.map((i) => i.videoId), token);
+      for (const it of items) it.durationSec = durations.get(it.videoId) || 0;
       const { toAdd, removeItemIds } = planYoutubeTodoSync(items, tracked, seen, pl.lang);
       Object.assign(allToAdd, toAdd);
       for (const id of removeItemIds) allRemove.push(id);
@@ -694,6 +742,9 @@ async function syncYoutubeTodo(interactive = false) {
       try { await ytApi(`playlistItems?id=${encodeURIComponent(id)}`, token, { method: 'DELETE' }); removed++; }
       catch (e) { console.warn('[ecoute] yt playlist delete failed', id, e); }
     }
+
+    try { await ytBackfillDurations(token); }
+    catch (e) { console.warn('[ecoute] yt duration backfill failed', e); }
 
     await chrome.storage.local.set({ ytTodoLastSync: Date.now() });
     return { ok: true, added: Object.keys(allToAdd).length, removed, failed };

@@ -80,7 +80,10 @@ function render() {
     title.appendChild(link);
     const meta = document.createElement('div');
     meta.className = 'wl-meta';
-    meta.textContent = item.channel || '';
+    // formatDuration comes from youtube-todo-rules.js. Unknown lengths (older
+    // imports not yet backfilled, live streams) just show the channel alone.
+    const dur = formatDuration(item.durationSec);
+    meta.textContent = [item.channel || '', dur].filter(Boolean).join(' · ');
     info.append(title, meta);
 
     const flag = document.createElement('span');

@@ -9,7 +9,8 @@
 //     it from the playlist.
 //   - not watched but already in the todo (a previous removal didn't land) →
 //     don't re-import, just remove it from the playlist again.
-// `items` are { videoId, title, channel, playlistItemId, position } from the
+// `items` are { videoId, title, channel, playlistItemId, position, durationSec }
+// from the
 // YouTube API (position = index in the playlist; new saves append, so a higher
 // position is more recently added). addedAt folds in the position so the list,
 // sorted newest-first, shows the last-added video at the top even when a whole
@@ -27,6 +28,7 @@ function planYoutubeTodoSync(items, trackedVideoIds, currentTodo, lang = 'fr', n
         title: it.title || '',
         channel: it.channel || '',
         lang,
+        durationSec: typeof it.durationSec === 'number' ? it.durationSec : null,
         addedAt: now + (it.position || 0),
         done: false,
       };
@@ -36,6 +38,28 @@ function planYoutubeTodoSync(items, trackedVideoIds, currentTodo, lang = 'fr', n
   return { toAdd, removeItemIds };
 }
 
+// YouTube reports lengths as ISO-8601 durations ("PT1H2M3S"). Returns seconds,
+// or null for anything unparseable — a live stream, for instance, reports
+// "P0D" and has no meaningful length.
+function parseIsoDuration(iso) {
+  const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(String(iso || ''));
+  if (!m) return null;
+  const [d, h, min, sec] = m.slice(1).map((v) => (v ? parseFloat(v) : 0));
+  const total = Math.round(d * 86400 + h * 3600 + min * 60 + sec);
+  return total > 0 ? total : null;
+}
+
+// "12:34" / "1:05:03", the way YouTube itself labels a video's length.
+function formatDuration(sec) {
+  if (!sec || sec < 0) return '';
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const rest = s % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(rest)}` : `${m}:${pad(rest)}`;
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { planYoutubeTodoSync };
+  module.exports = { planYoutubeTodoSync, parseIsoDuration, formatDuration };
 }
