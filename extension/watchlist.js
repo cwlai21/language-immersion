@@ -190,7 +190,11 @@ async function refreshStatus() {
     if (pls.length) for (const p of pls) addPlaylistRow(`https://www.youtube.com/playlist?list=${p.id}`, p.lang);
     else addPlaylistRow();
   }
-  document.getElementById('setupStatus').textContent = st.connected ? '✅ connecté' : '';
+  // Show the running build: a service worker that didn't pick up a code change
+  // is invisible otherwise, and the symptom (nothing syncs) looks like a bug.
+  const version = chrome.runtime.getManifest().version;
+  document.getElementById('setupStatus').textContent =
+    (st.connected ? '✅ connecté' : '') + ` · v${version}`;
   syncBtn.hidden = !st.connected;
   connectBtn.textContent = st.connected ? '🔗 Reconnecter' : '🔗 Connecter & synchroniser';
   if (st.connected && st.lastSync) syncMsg.textContent = `Dernière synchro ${fmtAgo(st.lastSync)}.`;
