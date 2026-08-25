@@ -516,8 +516,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 });
 
 /* ── YouTube "À regarder" playlist sync ──────────────────────────
- * Reads the configured YouTube playlist, adds any not-yet-watched video to
- * the shared video-todo kv_state list, then deletes it from the playlist.
+ * Reads the configured YouTube playlist, moves every video into the shared
+ * video-todo kv_state list (already-watched ones arrive pre-ticked), then
+ * deletes it from the playlist — the playlist is only an inbox.
  * Uses OAuth (chrome.identity) since deleting playlist items is a write. */
 const YT_TODO_KV = 'video-todo';
 // Listing the playlist is 1 quota unit (of 10,000/day), so polling often is
@@ -623,8 +624,8 @@ async function ytBackfillDurations(token) {
   return filled;
 }
 
-// Which of these videoIds the user has already tracked/watched (so we don't
-// re-add them). Queried in chunks to keep the URL short.
+// Which of these videoIds the user has already tracked/watched — they still get
+// imported, but pre-ticked. Queried in chunks to keep the URL short.
 async function ytTrackedVideoIds(videoIds) {
   const tracked = new Set();
   for (let i = 0; i < videoIds.length; i += 100) {

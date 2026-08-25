@@ -39,7 +39,12 @@ async function saveTodo(mutate) {
 function render() {
   const list = document.getElementById('list');
   list.innerHTML = '';
-  const items = Object.values(todo).sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+  // Watched videos import pre-ticked, and their addedAt is "now", so a plain
+  // newest-first sort would pile them on top of what you actually still want
+  // to watch. Unwatched first, newest-first within each half.
+  const items = Object.values(todo).sort(
+    (a, b) => (!!a.done - !!b.done) || (b.addedAt || 0) - (a.addedAt || 0),
+  );
   const doneCount = items.filter((i) => i.done).length;
   document.getElementById('count').textContent =
     items.length ? `${items.length - doneCount} à regarder · ${items.length} en tout` : '';

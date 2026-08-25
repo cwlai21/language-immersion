@@ -3,25 +3,27 @@
 // (test/youtube-todo-rules.test.js via require()). Dependency-free — no
 // chrome.*, no network; the caller owns fetching, storing, and deleting.
 
-// Decide what to do with the videos currently in the playlist:
-//   - already watched (videoId in `trackedVideoIds`) → leave it alone.
-//   - not watched, not yet imported → import it (add to the todo) AND remove
-//     it from the playlist.
-//   - not watched but already in the todo (a previous removal didn't land) →
-//     don't re-import, just remove it from the playlist again.
+// Decide what to do with the videos currently in the playlist. The playlist is
+// an inbox, so *everything* in it gets cleared out; what differs is the state
+// it arrives in:
+//   - not yet imported → import it (add to the todo) AND remove it from the
+//     playlist. Already watched (videoId in `trackedVideoIds`) means you've
+//     played it at least once, so it lands pre-ticked — a record rather than
+//     a chore.
+//   - already in the todo (a previous removal didn't land) → don't re-import,
+//     which would clobber its done state; just remove it from the playlist
+//     again.
 // `items` are { videoId, title, channel, playlistItemId, position, durationSec }
-// from the
-// YouTube API (position = index in the playlist; new saves append, so a higher
-// position is more recently added). addedAt folds in the position so the list,
-// sorted newest-first, shows the last-added video at the top even when a whole
-// batch imports in one sync. Returns { toAdd: { [videoId]: entry },
+// from the YouTube API (position = index in the playlist; new saves append, so
+// a higher position is more recently added). addedAt folds in the position so
+// the list, sorted newest-first, shows the last-added video at the top even
+// when a whole batch imports in one sync. Returns { toAdd: { [videoId]: entry },
 // removeItemIds: [playlistItemId] } and never mutates its inputs.
 function planYoutubeTodoSync(items, trackedVideoIds, currentTodo, lang = 'fr', now = Date.now()) {
   const toAdd = {};
   const removeItemIds = [];
   for (const it of items) {
     if (!it || !it.videoId) continue;
-    if (trackedVideoIds.has(it.videoId)) continue; // already watched — leave in the playlist
     if (!currentTodo[it.videoId] && !toAdd[it.videoId]) {
       toAdd[it.videoId] = {
         videoId: it.videoId,
@@ -30,7 +32,7 @@ function planYoutubeTodoSync(items, trackedVideoIds, currentTodo, lang = 'fr', n
         lang,
         durationSec: typeof it.durationSec === 'number' ? it.durationSec : null,
         addedAt: now + (it.position || 0),
-        done: false,
+        done: trackedVideoIds.has(it.videoId),
       };
     }
     removeItemIds.push(it.playlistItemId); // imported now, or already imported — clear it from the playlist

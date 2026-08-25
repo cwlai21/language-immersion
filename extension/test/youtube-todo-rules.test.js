@@ -42,12 +42,12 @@ test('an unknown video length is recorded as null, not dropped', () => {
   assert.equal(toAdd.V1.durationSec, null);
 });
 
-test('an already-watched video is left alone (not imported, not removed)', () => {
+test('an already-watched video is imported pre-ticked and cleared from the playlist', () => {
   const { toAdd, removeItemIds } = planYoutubeTodoSync(
     [item('V1', 'PI1')], new Set(['V1']), {},
   );
-  assert.deepEqual(toAdd, {});
-  assert.deepEqual(removeItemIds, []);
+  assert.equal(toAdd.V1.done, true);         // you played it — it arrives as a record, not a chore
+  assert.deepEqual(removeItemIds, ['PI1']);  // the playlist is an inbox: empty it either way
 });
 
 test('a video already in the todo is not re-imported but is removed again', () => {
@@ -58,14 +58,23 @@ test('a video already in the todo is not re-imported but is removed again', () =
   assert.deepEqual(removeItemIds, ['PI1']);  // retry the removal
 });
 
-test('a mixed playlist: import the new one, skip the watched one, retry the imported one', () => {
+test('a watched video already in the todo keeps the state you gave it', () => {
+  const { toAdd } = planYoutubeTodoSync(
+    [item('V1', 'PI1')], new Set(['V1']), { V1: { videoId: 'V1', done: false } },
+  );
+  assert.deepEqual(toAdd, {}); // un-ticking it by hand isn't undone by the next sync
+});
+
+test('a mixed playlist: import the new and the watched one, retry the imported one', () => {
   const { toAdd, removeItemIds } = planYoutubeTodoSync(
     [item('NEW', 'PIa'), item('WATCHED', 'PIb'), item('INLIST', 'PIc')],
     new Set(['WATCHED']),
     { INLIST: { videoId: 'INLIST', done: false } },
   );
-  assert.deepEqual(Object.keys(toAdd), ['NEW']);
-  assert.deepEqual(removeItemIds.sort(), ['PIa', 'PIc']);
+  assert.deepEqual(Object.keys(toAdd).sort(), ['NEW', 'WATCHED']);
+  assert.equal(toAdd.NEW.done, false);
+  assert.equal(toAdd.WATCHED.done, true);
+  assert.deepEqual(removeItemIds.sort(), ['PIa', 'PIb', 'PIc']); // nothing is left behind
 });
 
 test('the same video twice in the playlist is imported once, both entries removed', () => {
@@ -79,7 +88,7 @@ test('the same video twice in the playlist is imported once, both entries remove
 test('planYoutubeTodoSync does not mutate its inputs', () => {
   const current = { X: { videoId: 'X', done: true } };
   const tracked = new Set(['X']);
-  planYoutubeTodoSync([item('V1', 'PI1')], tracked, current, 'fr', 1000);
+  planYoutubeTodoSync([item('X', 'PI0'), item('V1', 'PI1')], tracked, current, 'fr', 1000);
   assert.deepEqual(current, { X: { videoId: 'X', done: true } });
   assert.deepEqual([...tracked], ['X']);
 });
