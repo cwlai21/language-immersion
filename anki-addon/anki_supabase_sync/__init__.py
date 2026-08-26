@@ -8,6 +8,10 @@ table used by the Écoute Chrome extension.
 Runs on profile open, every N minutes, after AnkiWeb sync, and on profile
 close. Network calls happen on a background thread and fail silently (the
 next run retries), so Anki is never blocked.
+
+Two machines can share the row for a given day: the push only ever raises a
+total, so whichever collection has seen the most reviews wins. That matters
+while AnkiWeb sync is unavailable and neither collection is complete.
 """
 
 import json
@@ -118,7 +122,16 @@ def _push(totals):
                 f"&source=eq.anki&select=id,seconds",
             )
             if existing:
-                if existing[0]["seconds"] != seconds:
+                # Only ever raise the total, never lower it. Two machines share
+                # one row per day/language, and while AnkiWeb sync is down each
+                # sees only its own reviews — the one that studied less would
+                # otherwise erase the other's more complete count. The longest
+                # total is the closest to the truth.
+                #
+                # The cost: a day whose reviews are genuinely deleted keeps its
+                # old number. To force a correction, delete the row in the
+                # dashboard; the next sync recreates it from the collection.
+                if seconds > existing[0]["seconds"]:
                     _sb_request(
                         cfg,
                         f"listening_sessions?id=eq.{existing[0]['id']}",

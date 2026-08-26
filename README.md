@@ -100,9 +100,12 @@ and form date defaults (`ROLLOVER_HOUR` in the extension scripts).
   git-ignored — build it, don't commit it. No credentials to set up;
   the Supabase URL and publishable key ship in `config.json`.
 - Two machines can both run it: `_push()` patches the existing row for that
-  date and language instead of inserting, so totals don't double. A collection
-  that's behind AnkiWeb briefly patches today's total *down*; the
-  `sync_did_finish` hook and `days_back` recompute fix it once the sync lands.
+  date and language instead of inserting, so totals don't double — and it only
+  ever raises the number, never lowers it. Whichever collection has seen the
+  most reviews wins, which is what you want while AnkiWeb sync is down and each
+  machine holds a partial picture. The trade: a day whose reviews are genuinely
+  deleted keeps its old total until you delete the row in the dashboard (the
+  next sync then recreates it).
 
 ## Podcast tracking
 
