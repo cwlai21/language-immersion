@@ -54,7 +54,7 @@ function goalStatus(stats) {
 /* ── Data ─────────────────────────────────── */
 async function fetchSessions() {
   allSessions = await sb.listSessions(
-    'select=id,date,seconds,language,type,title,channel,source,season,episode,created_at&order=date.desc,created_at.desc'
+    'select=id,date,seconds,language,type,title,channel,source,season,episode,video_id,created_at&order=date.desc,created_at.desc'
   );
 }
 
@@ -503,6 +503,8 @@ function sessionRow(rows) {
       watchState[k] = val; // optimistic local update so the row reflects it immediately
       li.classList.toggle('done', box.checked);
       saveWatchState((latest) => ({ ...latest, [k]: val }));
+      // …and tick it in À regarder, if the video is sitting in that list.
+      mirrorSessionsToWatchlist(rows.map((r) => r.video_id), box.checked);
     };
     li.appendChild(box);
   }
@@ -643,6 +645,7 @@ function enterEditMode(li, s) {
       if (k) {
         watchState[k] = 'done';
         saveWatchState((latest) => ({ ...latest, [k]: 'done' }));
+        mirrorSessionsToWatchlist([updated.video_id], true);
       }
       render();
     } catch (e) {

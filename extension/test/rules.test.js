@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const {
   dateKey, logicalNow, todayKey, startOfWeek,
   minutesByDate, computeStats,
-  sessionLang, normType, watchKey, startsDone,
+  sessionLang, normType, watchKey, sessionWatchKeys, startsDone,
   assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
   streakThreshold, goalStreak,
 } = require('../rules.js');
@@ -326,4 +326,27 @@ test('normType falls back to youtube for unrecognized types', () => {
   assert.equal(normType({ type: 'series' }), 'series');
   assert.equal(normType({ type: 'bogus' }), 'youtube');
   assert.equal(normType({}), 'youtube');
+});
+
+test('sessionWatchKeys collapses a video\'s split sessions into one key', () => {
+  const rows = [
+    { type: 'youtube', title: 'Point Culture', channel: 'LinksTheSun', language: 'fr' },
+    { type: 'youtube', title: 'Point Culture', channel: 'LinksTheSun', language: 'fr' },
+  ];
+  assert.deepEqual(sessionWatchKeys(rows), ['fr|youtube|Point Culture|LinksTheSun|']);
+});
+
+test('sessionWatchKeys keeps genuinely different keys apart and drops keyless rows', () => {
+  const rows = [
+    { type: 'youtube', title: 'Same', channel: 'C', language: 'fr' },
+    { type: 'youtube', title: 'Same', channel: 'C', language: 'en' }, // other language
+    { type: 'anki', title: 'Anki reviews', language: 'fr' },          // no checkbox
+    { type: 'youtube', title: '', channel: 'C', language: 'fr' },     // untitled
+  ];
+  assert.deepEqual(sessionWatchKeys(rows).sort(), ['en|youtube|Same|C|', 'fr|youtube|Same|C|']);
+});
+
+test('sessionWatchKeys handles no rows at all', () => {
+  assert.deepEqual(sessionWatchKeys([]), []);
+  assert.deepEqual(sessionWatchKeys(undefined), []);
 });

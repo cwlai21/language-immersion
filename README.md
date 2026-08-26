@@ -66,6 +66,13 @@ and a quick manual-entry form (for podcasts listened outside the browser).
 - Live timer (for podcast sessions) + manual entry, both with language choice
 - Separate 🇫🇷 and 🇬🇧 daily goals
 - Recent sessions with delete, CSV export, EN / 繁體中文 toggle
+- Session checkboxes are mirrored with the 📺 À regarder list (`watch-sync.js`):
+  ticking a video in either place ticks it in the other, so a finished video is
+  confirmed once. The two lists key their items differently — the watchlist by
+  `videoId`, the dashboard by `watchKey` (language|type|title|channel|episode) —
+  so the bridge looks the video up through `listening_sessions.video_id`. A
+  video with no sessions yet, or one watched but never saved to the playlist,
+  simply has nothing to mirror.
 
 ## Anki time sync
 

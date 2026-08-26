@@ -85,6 +85,15 @@ function watchKey(s) {
   return `${sessionLang(s)}|${normType(s)}|${s.title}|${s.channel || ''}|${ep}`;
 }
 
+// The distinct watch-todo keys a set of session rows belongs to. One video can
+// have several rows (a pause splits a viewing in two), and the dashboard groups
+// them into a single checkbox, so ticking that video means ticking one key —
+// but a title watched in both languages is genuinely two. Rows with no key
+// (untitled, or a type with no checkbox like anki) drop out.
+function sessionWatchKeys(rows) {
+  return [...new Set((rows || []).map(watchKey).filter(Boolean))];
+}
+
 // New titled content starts as 'todo' so it survives the window later —
 // except Shorts binges (scrolled through, nothing to resume), which start
 // 'done' (uncheck one to pin it as unfinished). Auto-detected episodes, in
@@ -215,7 +224,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     pad, dateKey, ROLLOVER_HOUR, logicalNow, todayKey, startOfWeek,
     minutesByDate, computeStats,
-    sessionLang, KNOWN_TYPES, normType, TODO_TYPES, watchKey, startsDone,
+    sessionLang, KNOWN_TYPES, normType, TODO_TYPES, watchKey, sessionWatchKeys, startsDone,
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
     STREAK_GOAL_HISTORY, streakThreshold, goalStreak,
   };
