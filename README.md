@@ -95,7 +95,9 @@ and form date defaults (`ROLLOVER_HOUR` in the extension scripts).
   ~/Library/Application\ Support/Anki2/addons21/`. Windows (or anywhere the path
   is awkward): run `anki-addon/build.sh` and install the resulting
   `.ankiaddon` via Anki → Tools → Add-ons → *Install Add-on From File*. The
-  package is git-ignored — build it, don't commit it. No credentials to set up;
+  build stages a `manifest.json` into the archive — installing from a file
+  fails with *Invalid add-on manifest* without one. The package is
+  git-ignored — build it, don't commit it. No credentials to set up;
   the Supabase URL and publishable key ship in `config.json`.
 - Two machines can both run it: `_push()` patches the existing row for that
   date and language instead of inserting, so totals don't double. A collection

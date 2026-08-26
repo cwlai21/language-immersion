@@ -3,18 +3,33 @@
 # Tools → Add-ons → Install Add-on From File (handy for the Windows laptop,
 # where copying into %APPDATA%\Anki2\addons21 by hand is fiddlier).
 #
-# Anki names the installed folder after the file, so keep the .ankiaddon name
-# matching the source folder. The zip holds the FILES, not the folder — Anki
-# expects __init__.py at the archive root. __pycache__ and the GUI-written
-# meta.json are left out on purpose: they're per-machine.
+# The zip holds the FILES, not the folder — Anki expects __init__.py at the
+# archive root — plus a manifest.json, which installing from a file requires
+# ("package" and "name" are mandatory; see aqt/addons.py _manifest_schema).
+# "package" becomes the installed folder name, so it must match the source
+# folder. Staged in a temp dir so the manifest never lands in the source tree,
+# and so __pycache__ and the GUI-written meta.json stay out: both per-machine.
 set -e
 
-cd "$(dirname "$0")/anki_supabase_sync"
-out="../anki_supabase_sync.ankiaddon"
+cd "$(dirname "$0")"
+out="$PWD/anki_supabase_sync.ankiaddon"
 rm -f "$out"
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+cp anki_supabase_sync/__init__.py anki_supabase_sync/config.json \
+   anki_supabase_sync/config.md "$tmp/"
+cat > "$tmp/manifest.json" <<'JSON'
+{
+  "package": "anki_supabase_sync",
+  "name": "Écoute — Anki time sync"
+}
+JSON
+
+cd "$tmp"
+files="manifest.json __init__.py config.json config.md"
 # Git Bash on Windows ships no `zip`, so fall back to Python's zipfile, which
 # writes an identical archive and comes with any Python install.
-files="__init__.py config.json config.md"
 if command -v zip >/dev/null 2>&1; then
   zip -q "$out" $files
 elif py=$(command -v python3 || command -v python); then
@@ -27,7 +42,8 @@ else
   echo "On Windows without either, run this in PowerShell from anki-addon/:" >&2
   echo "  Compress-Archive -Path anki_supabase_sync\\* -DestinationPath anki_supabase_sync.zip" >&2
   echo "  Rename-Item anki_supabase_sync.zip anki_supabase_sync.ankiaddon" >&2
+  echo "  (then add a manifest.json with \"package\" and \"name\" — Anki requires it)" >&2
   exit 1
 fi
-cd ..
-echo "built $(pwd)/anki_supabase_sync.ankiaddon"
+
+echo "built $out"
