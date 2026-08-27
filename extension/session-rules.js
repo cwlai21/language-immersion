@@ -41,7 +41,12 @@ function applyHeartbeat(currentSession, heartbeat, now, date) {
           startedAt: now,
         };
     session.seconds += seconds;
-    session.lastBeat = now;
+    // lastBeat marks the last *counted* second, not the last heartbeat: a
+    // paused tab left open on /watch keeps flushing every 15s with seconds: 0,
+    // and refreshing lastBeat on those meant IDLE_FINALIZE_MS could never
+    // elapse — the session sat in storage, invisible to the dashboard, until
+    // the user navigated away. Same rule as applySeriesHeartbeat.
+    if (seconds > 0) session.lastBeat = now;
     session.lang = decision.lang;
     session.reason = decision.reason;
   }

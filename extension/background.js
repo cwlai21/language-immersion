@@ -493,7 +493,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   const { currentSession, seriesByTab = {}, pendingRows = [], shortsBuffer = {} } =
     await chrome.storage.local.get(['currentSession', 'seriesByTab', 'pendingRows', 'shortsBuffer']);
 
-  if (currentSession && Date.now() - (currentSession.lastBeat || 0) > IDLE_FINALIZE_MS) {
+  // startedAt fallback: a session announced but never played has no lastBeat.
+  if (currentSession && Date.now() - (currentSession.lastBeat || currentSession.startedAt || 0) > IDLE_FINALIZE_MS) {
     await finalizeSession(currentSession);
     await clearBadgeUnlessActive();
   }

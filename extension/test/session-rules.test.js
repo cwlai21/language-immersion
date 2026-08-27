@@ -50,16 +50,30 @@ test('the same video accumulates seconds and refreshes lastBeat, nothing finaliz
   assert.equal(step.session.lastBeat, NOW);
 });
 
-test('a paused heartbeat for the SAME video keeps the session alive (adds 0s, still no finalize)', () => {
+/* ── the regression this guards: a paused tab flushes every 15s with
+   seconds: 0, and treating those as activity kept lastBeat fresh forever, so
+   the idle finalize never fired and the session never reached the dashboard ── */
+test('a paused heartbeat for the SAME video does not refresh lastBeat, so the session can go idle', () => {
   const active = { videoId: 'A', seconds: 120, lang: 'en', lastBeat: 500 };
   const step = applyHeartbeat(
     active,
     { video: vid('A'), seconds: 0, playing: false, decision: track('en') },
     NOW, DATE,
   );
-  assert.equal(step.finalized, null);
+  assert.equal(step.finalized, null); // still the current session, just stale
   assert.equal(step.session.seconds, 120);
-  assert.equal(step.session.lastBeat, NOW); // still counts as activity
+  assert.equal(step.session.lastBeat, 500);
+});
+
+test('a paused heartbeat still self-corrects the language (ASR re-probe)', () => {
+  const active = { videoId: 'A', seconds: 120, lang: 'en', reason: 'title', lastBeat: 500 };
+  const step = applyHeartbeat(
+    active,
+    { video: vid('A'), seconds: 0, playing: false, decision: { lang: 'fr', reason: 'asr' } },
+    NOW, DATE,
+  );
+  assert.equal(step.session.lang, 'fr');
+  assert.equal(step.session.reason, 'asr');
 });
 
 test('with no current session, a tracked heartbeat starts a fresh one', () => {
