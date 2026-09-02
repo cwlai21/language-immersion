@@ -1,5 +1,13 @@
 /* Trip listening checklist. Items are curated in code; checked state syncs
- * across devices via the Supabase kv_state table (key: trip-checklist). */
+ * across devices via the Supabase kv_state table (key: trip-checklist).
+ *
+ * The ticks are also shared with the extension's other lists through
+ * watch-sync.js: an item declares what it is — a YouTube `url` to take a video
+ * id from, a podcast `show` to match against a session's channel — and ticking
+ * it here ticks it on the dashboard and in À regarder, and the other way
+ * about. Items with neither (a YouTube *search* link, an article) have nothing
+ * to match on and stay hand-ticked, which is fine: most of this list is
+ * "go and find something on this", not one identifiable video. */
 
 const yt = (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
 
@@ -8,15 +16,15 @@ const SECTIONS = [
     title: '🎧 Pendant tout le voyage',
     blurb: 'Des valeurs sûres à écouter en route — trajets en train Lyon → Genève inclus.',
     items: [
-      { id: 'gen-innerfrench', lang: 'fr', kind: '🎙️', title: 'InnerFrench — épisodes culture & société',
+      { id: 'gen-innerfrench', lang: 'fr', kind: '🎙️', show: 'InnerFrench', title: 'InnerFrench — épisodes culture & société',
         desc: 'Français clair et lent, parfait en déplacement.', url: 'https://innerfrench.com/podcast/' },
-      { id: 'gen-panache', lang: 'fr', kind: '🎙️', title: 'French With Panache — conversations réelles',
+      { id: 'gen-panache', lang: 'fr', kind: '🎙️', show: 'French With Panache', title: 'French With Panache — conversations réelles',
         desc: 'Déjà dans tes abonnements — pioche les épisodes voyage/cuisine.', url: 'https://podcasts.apple.com/fr/podcast/french-with-panache-interesting-conversations-in-real/id1699597868' },
-      { id: 'gen-ovd', lang: 'fr', kind: '🎙️', title: 'On va déguster (France Inter)',
+      { id: 'gen-ovd', lang: 'fr', kind: '🎙️', show: 'On va déguster', title: 'On va déguster (France Inter)',
         desc: 'LA référence gastronomie — cherche les épisodes Lyon, Provence, fromages.', url: 'https://podcasts.apple.com/fr/podcast/on-va-d%C3%A9guster/id382262093' },
-      { id: 'gen-bouffons', lang: 'fr', kind: '🎙️', title: 'Bouffons (Nouvelles Écoutes)',
+      { id: 'gen-bouffons', lang: 'fr', kind: '🎙️', show: 'Bouffons', title: 'Bouffons (Nouvelles Écoutes)',
         desc: 'La culture culinaire française décortiquée, 30 min par épisode.', url: 'https://podcasts.apple.com/fr/podcast/bouffons/id1324604234' },
-      { id: 'gen-duolingo', lang: 'en', kind: '🎙️', title: 'Duolingo French Podcast',
+      { id: 'gen-duolingo', lang: 'en', kind: '🎙️', show: 'Duolingo French Podcast', title: 'Duolingo French Podcast',
         desc: 'Histoires vraies mi-anglais mi-français — les jours de fatigue.', url: 'https://podcast.duolingo.com/french' },
       { id: 'gen-easyfrench', lang: 'fr', kind: '▶️', title: 'Easy French — sous-titres FR+EN incrustés',
         desc: 'Micro-trottoirs avec double sous-titrage sur chaque vidéo — cherchez « Paris ou Marseille ? » avec InnerFrench.', url: yt('easy french marseille paris') },
@@ -68,15 +76,15 @@ const SECTIONS = [
     title: '⚓ Antibes Juan-les-Pins',
     blurb: 'Entre Nice et Cannes: remparts grecs, port Vauban et musée Picasso.',
     items: [
-      { id: 'ant-podcast', lang: 'fr', kind: '🎙️', title: 'Le podcast d’Antibes Juan-les-Pins — officiel',
+      { id: 'ant-podcast', lang: 'fr', kind: '🎙️', show: 'Le podcast d’Antibes Juan-les-Pins', title: 'Le podcast d’Antibes Juan-les-Pins — officiel',
         desc: 'La ville se raconte: histoire, culture, interviews d’Antibois — sur Spotify/Apple, donc compté dans ton tracker.', url: 'https://open.spotify.com/show/11ntTLqnzqs5P9WQuSTKWi' },
-      { id: 'ant-ici', lang: 'fr', kind: '🎙️', title: '« Antibes : 2 500 ans d’histoire face à la mer » (Radio France)',
+      { id: 'ant-ici', lang: 'fr', kind: '🎙️', show: '1000 raisons d’aimer la Côte d’Azur', title: '« Antibes : 2 500 ans d’histoire face à la mer » (Radio France)',
         desc: 'Épisode de « 1000 raisons d’aimer la Côte d’Azur »: fondation grecque, fortifications, essor touristique.', url: 'https://www.ici.fr/emissions/1000-raisons-d-aimer-la-cote-d-azur/antibes-2-500-ans-d-histoire-face-a-la-mer-2506120' },
       { id: 'ant-berzingue', lang: 'fr', kind: '▶️', title: 'L’histoire d’Antibes Juan-les-Pins… À toute berzingue !',
         desc: 'Toute l’histoire en 5 min, débit rapide — bon défi de compréhension avant d’arriver.', url: 'https://www.youtube.com/watch?v=uviSD7iB1M4' },
       { id: 'ant-adresses', lang: 'fr', kind: '▶️', title: 'Antibes, bienvenue sur la Côte d’Azur | Mes bonnes adresses',
         desc: 'Une résidente partage ses bonnes adresses — à voir juste avant de partir pour noter des lieux.', url: 'https://www.youtube.com/watch?v=eeFycGv7kRk' },
-      { id: 'ant-paroles', lang: 'fr', kind: '🎙️', title: 'Paroles d’Antibois — témoignages d’habitants',
+      { id: 'ant-paroles', lang: 'fr', kind: '🎙️', show: 'Paroles d’Antibois', title: 'Paroles d’Antibois — témoignages d’habitants',
         desc: 'Français authentique non scripté: des Antibois racontent leur ville et son histoire.', url: 'https://www.antibes-juanlespins.com/sorties-loisirs/antibes-ville-de-culture/la-culture-au-numerique/paroles-dantibois/1939-1945-la-seconde-guerre-mondiale/podcast' },
     ],
   },
@@ -102,7 +110,7 @@ const SECTIONS = [
         desc: 'Le télépéage, les 80 km/h, la fameuse priorité à droite en ville.', url: yt('conduire en france conseils autoroute péage priorité à droite') },
       { id: 'route-vignette', lang: 'fr', kind: '▶️', title: 'Conduire en Suisse — la vignette autoroutière',
         desc: 'Vignette obligatoire (~40 CHF), limites différentes, radars impitoyables — à voir AVANT de passer la frontière.', url: yt('conduire en suisse vignette autoroute règles') },
-      { id: 'route-baladeurs', lang: 'fr', kind: '🎙️', title: 'Les Baladeurs (Les Others)',
+      { id: 'route-baladeurs', lang: 'fr', kind: '🎙️', show: 'Les Baladeurs', title: 'Les Baladeurs (Les Others)',
         desc: 'Récits d’aventure immersifs — le podcast parfait pour les longues routes.', url: 'https://podcasts.apple.com/fr/podcast/les-baladeurs/id1388330691' },
     ],
   },
@@ -110,7 +118,7 @@ const SECTIONS = [
     title: '⚽ Football',
     blurb: 'Trois villes de Ligue 1 sur votre route: OL, OM, OGC Nice — et le Servette à Genève.',
     items: [
-      { id: 'foot-afterfoot', lang: 'fr', kind: '🎙️', title: 'L’After Foot (RMC)',
+      { id: 'foot-afterfoot', lang: 'fr', kind: '🎙️', show: 'L’After Foot', title: 'L’After Foot (RMC)',
         desc: 'L’émission foot de référence — quotidienne, parfaite en voiture.', url: 'https://podcasts.apple.com/fr/podcast/lafter-foot/id140644703' },
       { id: 'foot-om', lang: 'fr', kind: '▶️', title: 'L’OM & le Vélodrome — la ferveur marseillaise',
         desc: 'Le stade se visite; comprendre l’OM, c’est comprendre Marseille.', url: yt('OM supporters vélodrome documentaire') },
@@ -162,17 +170,17 @@ const SECTIONS = [
     title: '💎 Maisons de luxe — l’histoire',
     blurb: 'Hermès, Chanel, LVMH… Les maisons racontent elles-mêmes leur histoire — et Lyon (la soie !) en fait partie.',
     items: [
-      { id: 'luxe-loudana', lang: 'fr', kind: '🎙️', title: 'Podcast du Luxe (Lou Dana)',
+      { id: 'luxe-loudana', lang: 'fr', kind: '🎙️', show: 'Podcast du Luxe', title: 'Podcast du Luxe (Lou Dana)',
         desc: 'Décryptage des grandes maisons, épisode par épisode.', url: 'https://podcasts.apple.com/fr/podcast/podcast-du-luxe-par-lou-dana/id1763830244' },
-      { id: 'luxe-hermes', lang: 'fr', kind: '🎙️', title: 'Le Monde d’Hermès — podcast officiel',
+      { id: 'luxe-hermes', lang: 'fr', kind: '🎙️', show: 'Le Monde d’Hermès', title: 'Le Monde d’Hermès — podcast officiel',
         desc: 'La maison raconte ses artisans et son histoire, production superbe.', url: 'https://open.spotify.com/search/le%20monde%20d%27herm%C3%A8s' },
-      { id: 'luxe-chanel', lang: 'fr', kind: '🎙️', title: 'Chanel « 3.55 » — podcast officiel',
+      { id: 'luxe-chanel', lang: 'fr', kind: '🎙️', show: '3.55', title: 'Chanel « 3.55 » — podcast officiel',
         desc: 'Création, ateliers, histoire de Gabrielle Chanel.', url: 'https://open.spotify.com/search/chanel%203.55' },
       { id: 'luxe-prigent', lang: 'fr', kind: '▶️', title: 'Loïc Prigent — coulisses des défilés & ateliers',
         desc: 'LE documentariste de la mode, drôle et sous-titré — Dior, Chanel, Vuitton de l’intérieur.', url: yt('loïc prigent atelier dior chanel coulisses') },
       { id: 'luxe-arnault', lang: 'fr', kind: '▶️', title: 'HugoDécrypte × Bernard Arnault',
         desc: 'Le patron de LVMH interviewé par la chaîne que vous suivez déjà.', url: yt('hugodécrypte bernard arnault interview') },
-      { id: 'luxe-acquired', lang: 'en', kind: '🎙️', title: 'Acquired — « LVMH » (4h!)',
+      { id: 'luxe-acquired', lang: 'en', kind: '🎙️', show: 'Acquired', title: 'Acquired — « LVMH » (4h!)',
         desc: 'Toute la saga LVMH en anglais — le récit business de référence, transcript complet sur le site.', url: 'https://www.acquired.fm/episodes/lvmh' },
       { id: 'luxe-soie', lang: 'fr', kind: '▶️', title: 'La soie lyonnaise — des canuts aux carrés Hermès',
         desc: 'À voir avant Lyon: la Croix-Rousse, la Maison des Canuts, et pourquoi le luxe français est né là.', url: yt('soie lyonnaise canuts histoire documentaire') },
@@ -217,6 +225,43 @@ async function saveChecked() {
   } catch { /* offline — localStorage keeps it until next save */ }
 }
 
+const ALL_ITEMS = SECTIONS.flatMap((s) => s.items);
+
+// This page as a surface for watch-sync: keyed by the item's own id, and only
+// items that name something a session could have recorded ever match.
+registerSurface({
+  name: 'trip',
+  kv: KV_KEY,
+  keys(link) {
+    const videoIds = new Set(link.videoIds);
+    const shows = new Set(link.shows);
+    return ALL_ITEMS.filter((item) => {
+      const l = contentLinks(item);
+      return l.videoIds.some((v) => videoIds.has(v)) || l.shows.some((sh) => shows.has(sh));
+    }).map((item) => item.id);
+  },
+  patch(state, keys, done) {
+    const next = { ...state };
+    let changed = false;
+    for (const k of keys) {
+      if (!!next[k] !== done) { next[k] = done; changed = true; }
+    }
+    return changed ? next : null;
+  },
+});
+
+// Catch up on ticks made elsewhere while this page wasn't open. Only items we
+// have no answer for are filled in — an item the user deliberately cleared is
+// stored as false, not missing, so it stays cleared.
+async function reconcile() {
+  const done = await doneElsewhere(ALL_ITEMS);
+  const missing = [...done].filter((id) => checked[id] === undefined);
+  if (!missing.length) return;
+  for (const id of missing) checked[id] = true;
+  render();
+  await saveChecked();
+}
+
 function updateProgress() {
   const total = SECTIONS.reduce((n, s) => n + s.items.length, 0);
   const done = SECTIONS.reduce((n, s) => n + s.items.filter((i) => checked[i.id]).length, 0);
@@ -238,11 +283,17 @@ function render() {
       box.type = 'checkbox';
       box.checked = !!checked[item.id];
       box.onchange = () => {
+        // Unticking records false rather than dropping the key: reconcile()
+        // fills in only the items it has no answer for, and "I cleared this on
+        // purpose" is an answer.
         checked[item.id] = box.checked;
-        if (!box.checked) delete checked[item.id];
         row.classList.toggle('done', box.checked);
         updateProgress();
         saveChecked();
+        // Tick it on the dashboard and in À regarder too, where this item is
+        // something they know about. Not awaited: the tick above is already
+        // saved, and the mirror is best-effort.
+        mirrorTick('trip', contentLinks(item), box.checked);
       };
 
       const info = document.createElement('div');
@@ -266,4 +317,5 @@ function render() {
 (async function init() {
   await loadChecked();
   render();
+  reconcile(); // network round-trip — let the list paint first
 })();

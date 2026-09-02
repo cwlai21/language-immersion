@@ -94,6 +94,83 @@ function sessionWatchKeys(rows) {
   return [...new Set((rows || []).map(watchKey).filter(Boolean))];
 }
 
+/* ── Linking a curated list to what was actually watched ─────
+ *
+ * Pages like ✈️ Voyage curate their items by hand, so they can't key them the
+ * way the dashboard does — a curated item exists long before any session. What
+ * the two ends do share is what a session records about the thing itself: a
+ * YouTube video id, or, for a podcast, the show in `channel`. An item declares
+ * whichever it has and these functions do the matching, so a page only has to
+ * describe its items, not know how any other list is keyed. */
+
+// The YouTube video id in a watch / share / embed URL, or '' when there is
+// none to find — a search link, a podcast page, a plain article.
+function videoIdFromUrl(url) {
+  const m = String(url || '').match(
+    /(?:[?&]v=|youtu\.be\/|\/embed\/|\/shorts\/)([A-Za-z0-9_-]+)/,
+  );
+  return m ? m[1] : '';
+}
+
+// Show names arrive from two different hands — typed into a curated list here,
+// written by whatever the podcast tracker read from Spotify or Apple there —
+// so compare them loosely. Case, accents, curly apostrophes and surrounding
+// space are all noise; a real difference in the name is not.
+function normShow(name) {
+  return String(name || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2018\u2019\u02bc]/g, "'")
+    .trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// What a curated item can be matched by. Both are lists because an item may
+// legitimately be neither (a search link — nothing to match, and that is not
+// an error) or, later, more than one.
+function contentLinks(item) {
+  const videoId = videoIdFromUrl(item && item.url);
+  const show = normShow(item && item.show);
+  return { videoIds: videoId ? [videoId] : [], shows: show ? [show] : [] };
+}
+
+// Which of `items` the other lists already consider finished.
+//
+// `rows` are the session rows that could possibly match (fetched by video id,
+// plus the podcast rows), `watchlist` is the À regarder kv doc keyed by video
+// id, `watchTodo` the dashboard's keyed by watchKey. An item counts as done if
+// À regarder has it ticked, or if any session it matches is ticked on the
+// dashboard — *any*, because one finished episode answers "have I got to this
+// show yet?", which is what a curated item asks.
+function doneItemIds(items, rows, watchlist, watchTodo) {
+  const byVideo = new Map();
+  const byShow = new Map();
+  for (const r of rows || []) {
+    if (r.video_id) {
+      if (!byVideo.has(r.video_id)) byVideo.set(r.video_id, []);
+      byVideo.get(r.video_id).push(r);
+    }
+    const show = normShow(r.channel);
+    if (show) {
+      if (!byShow.has(show)) byShow.set(show, []);
+      byShow.get(show).push(r);
+    }
+  }
+  const done = new Set();
+  for (const item of items || []) {
+    const { videoIds, shows } = contentLinks(item);
+    if (videoIds.some((v) => (watchlist || {})[v] && (watchlist || {})[v].done)) {
+      done.add(item.id);
+      continue;
+    }
+    const matched = [
+      ...videoIds.flatMap((v) => byVideo.get(v) || []),
+      ...shows.flatMap((sh) => byShow.get(sh) || []),
+    ];
+    const keys = sessionWatchKeys(matched);
+    if (keys.some((k) => (watchTodo || {})[k] === 'done')) done.add(item.id);
+  }
+  return done;
+}
+
 // New titled content starts as 'todo' so it survives the window later —
 // except Shorts binges (scrolled through, nothing to resume), which start
 // 'done' (uncheck one to pin it as unfinished). Auto-detected episodes, in
@@ -225,6 +302,7 @@ if (typeof module !== 'undefined') {
     pad, dateKey, ROLLOVER_HOUR, logicalNow, todayKey, startOfWeek,
     minutesByDate, computeStats,
     sessionLang, KNOWN_TYPES, normType, TODO_TYPES, watchKey, sessionWatchKeys, startsDone,
+    videoIdFromUrl, normShow, contentLinks, doneItemIds,
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
     STREAK_GOAL_HISTORY, streakThreshold, goalStreak,
   };

@@ -66,13 +66,37 @@ and a quick manual-entry form (for podcasts listened outside the browser).
 - Live timer (for podcast sessions) + manual entry, both with language choice
 - Separate 🇫🇷 and 🇬🇧 daily goals
 - Recent sessions with delete, CSV export, EN / 繁體中文 toggle
-- Session checkboxes are mirrored with the 📺 À regarder list (`watch-sync.js`):
-  ticking a video in either place ticks it in the other, so a finished video is
-  confirmed once. The two lists key their items differently — the watchlist by
-  `videoId`, the dashboard by `watchKey` (language|type|title|channel|episode) —
-  so the bridge looks the video up through `listening_sessions.video_id`. A
-  video with no sessions yet, or one watched but never saved to the playlist,
-  simply has nothing to mirror.
+- Session checkboxes are mirrored with every other list in the extension
+  (`watch-sync.js`): tick a video on the dashboard, in 📺 À regarder or on the
+  ✈️ Voyage checklist and it is ticked in all of them, so a finished video is
+  confirmed once.
+
+### Shared ticks (`watch-sync.js`)
+
+Each list keys its items differently — À regarder by `videoId`, the dashboard by
+`watchKey` (language|type|title|channel|episode), Voyage by the curated item's
+own id — because each knows the content at a different moment. They are matched
+instead through what a session records about the content itself:
+`listening_sessions.video_id`, and `channel` for a podcast show.
+
+A list is a *surface*: a `kv_state` document plus how to read and write its own
+keys. Two are built in (`video-todo`, `watch-todo`); a page adds its own with
+`registerSurface()` when it loads. Adding a future page means the two halves it
+needs, and nothing anywhere else:
+
+- **push** — `mirrorTick(name, links, done)` in the checkbox handler, telling
+  every surface loaded on this page.
+- **pull** — `doneElsewhere(items)` on load, catching up on ticks made while
+  the page wasn't open, filling in *only* items it has no answer for.
+
+So a page describes its items (`url` to take a video id from, `show` to match a
+podcast by) and never learns how any other list is keyed. Items that name
+neither — a YouTube *search* link, an article — have nothing to match on and
+stay hand-ticked; that is normal, not a failure. So does a video with no
+sessions yet, or one watched but never saved to the playlist.
+
+Unticking is stored as an explicit `false` rather than a missing key, so a box
+you deliberately cleared is not filled back in on the next load.
 
 ## Anki time sync
 

@@ -70,10 +70,10 @@ function render() {
         if (latest[item.videoId]) latest[item.videoId].done = done;
         return latest;
       }).then(render);
-      // Tick the same video on the dashboard's session list too, so a finished
+      // Tick the same video on every other list that knows it, so a finished
       // video is confirmed once. Deliberately not awaited: the tick above is
       // already saved, and the mirror is best-effort.
-      mirrorWatchlistToSessions(item.videoId, done);
+      mirrorTick('watchlist', { videoIds: [item.videoId] }, done);
     };
 
     const info = document.createElement('div');

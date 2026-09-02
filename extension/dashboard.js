@@ -503,8 +503,13 @@ function sessionRow(rows) {
       watchState[k] = val; // optimistic local update so the row reflects it immediately
       li.classList.toggle('done', box.checked);
       saveWatchState((latest) => ({ ...latest, [k]: val }));
-      // …and tick it in À regarder, if the video is sitting in that list.
-      mirrorSessionsToWatchlist(rows.map((r) => r.video_id), box.checked);
+      // …and tick it on every other list that knows this content.
+      // Only a podcast's channel is a show name; a YouTube channel is not, and
+      // passing one could collide with a show that happens to share its name.
+      mirrorTick('sessions', {
+        videoIds: rows.map((r) => r.video_id),
+        shows: rows.filter((r) => r.type === 'podcast').map((r) => r.channel),
+      }, box.checked);
     };
     li.appendChild(box);
   }
@@ -645,7 +650,10 @@ function enterEditMode(li, s) {
       if (k) {
         watchState[k] = 'done';
         saveWatchState((latest) => ({ ...latest, [k]: 'done' }));
-        mirrorSessionsToWatchlist([updated.video_id], true);
+        mirrorTick('sessions', {
+          videoIds: [updated.video_id],
+          shows: updated.type === 'podcast' ? [updated.channel] : [],
+        }, true);
       }
       render();
     } catch (e) {

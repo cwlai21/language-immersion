@@ -9,6 +9,7 @@ const {
   dateKey, logicalNow, todayKey, startOfWeek,
   minutesByDate, computeStats,
   sessionLang, normType, watchKey, sessionWatchKeys, startsDone,
+  videoIdFromUrl, normShow, contentLinks, doneItemIds,
   assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
   streakThreshold, goalStreak,
 } = require('../rules.js');
@@ -349,4 +350,89 @@ test('sessionWatchKeys keeps genuinely different keys apart and drops keyless ro
 test('sessionWatchKeys handles no rows at all', () => {
   assert.deepEqual(sessionWatchKeys([]), []);
   assert.deepEqual(sessionWatchKeys(undefined), []);
+});
+
+/* ── Linking a curated page to what was watched ─────────── */
+
+test('videoIdFromUrl reads watch, share, embed and shorts links', () => {
+  assert.equal(videoIdFromUrl('https://www.youtube.com/watch?v=uyLbScMzyi8'), 'uyLbScMzyi8');
+  assert.equal(videoIdFromUrl('https://www.youtube.com/watch?t=30&v=uyLbScMzyi8'), 'uyLbScMzyi8');
+  assert.equal(videoIdFromUrl('https://youtu.be/ksw7lp_rI7Y'), 'ksw7lp_rI7Y');
+  assert.equal(videoIdFromUrl('https://www.youtube.com/embed/c6axar1j8GM'), 'c6axar1j8GM');
+  assert.equal(videoIdFromUrl('https://www.youtube.com/shorts/eeFycGv7kRk'), 'eeFycGv7kRk');
+});
+
+test('videoIdFromUrl finds nothing in a search or podcast link', () => {
+  assert.equal(videoIdFromUrl('https://www.youtube.com/results?search_query=lyon'), '');
+  assert.equal(videoIdFromUrl('https://podcasts.apple.com/fr/podcast/bouffons/id1324604234'), '');
+  assert.equal(videoIdFromUrl(''), '');
+  assert.equal(videoIdFromUrl(undefined), '');
+  assert.equal(videoIdFromUrl('https://www.youtube.com/watch?v='), '');
+});
+
+test('normShow sees past case, accents, curly apostrophes and spacing', () => {
+  assert.equal(normShow('  On va DÉGUSTER '), 'on va deguster');
+  assert.equal(normShow('L\u2019After Foot'), normShow("L'after foot"));
+  assert.equal(normShow('Les   Baladeurs'), 'les baladeurs');
+  assert.equal(normShow(''), '');
+});
+
+test('contentLinks takes a video from the url and a show from the field', () => {
+  assert.deepEqual(
+    contentLinks({ url: 'https://www.youtube.com/watch?v=uyLbScMzyi8' }),
+    { videoIds: ['uyLbScMzyi8'], shows: [] },
+  );
+  assert.deepEqual(
+    contentLinks({ url: 'https://podcasts.apple.com/x', show: 'On va déguster' }),
+    { videoIds: [], shows: ['on va deguster'] },
+  );
+  assert.deepEqual(contentLinks({ url: yt() }), { videoIds: [], shows: [] });
+});
+
+const yt = () => 'https://www.youtube.com/results?search_query=lyon';
+
+test('doneItemIds ticks an item whose video À regarder has ticked', () => {
+  const items = [{ id: 'lyon-eb', url: 'https://www.youtube.com/watch?v=V1' }];
+  const done = doneItemIds(items, [], { V1: { done: true } }, {});
+  assert.deepEqual([...done], ['lyon-eb']);
+});
+
+test('doneItemIds ticks an item whose session the dashboard has ticked', () => {
+  const items = [{ id: 'lyon-eb', url: 'https://www.youtube.com/watch?v=V1' }];
+  const rows = [{ video_id: 'V1', type: 'youtube', title: 'Lyon', channel: 'France 5', language: 'fr' }];
+  const watchTodo = { 'fr|youtube|Lyon|France 5|': 'done' };
+  assert.deepEqual([...doneItemIds(items, rows, {}, watchTodo)], ['lyon-eb']);
+});
+
+test('doneItemIds leaves an item whose session is still todo', () => {
+  const items = [{ id: 'lyon-eb', url: 'https://www.youtube.com/watch?v=V1' }];
+  const rows = [{ video_id: 'V1', type: 'youtube', title: 'Lyon', channel: 'France 5', language: 'fr' }];
+  assert.deepEqual([...doneItemIds(items, rows, {}, { 'fr|youtube|Lyon|France 5|': 'todo' })], []);
+});
+
+test('doneItemIds matches a podcast by show, one finished episode being enough', () => {
+  const items = [{ id: 'gen-ovd', url: 'https://podcasts.apple.com/x', show: 'On va déguster' }];
+  const rows = [
+    { type: 'podcast', title: 'Ép. 1', channel: 'On va Déguster', language: 'fr', video_id: '' },
+    { type: 'podcast', title: 'Ép. 2', channel: 'On va Déguster', language: 'fr', video_id: '' },
+  ];
+  const watchTodo = { 'fr|podcast|Ép. 1|On va Déguster|': 'todo', 'fr|podcast|Ép. 2|On va Déguster|': 'done' };
+  assert.deepEqual([...doneItemIds(items, rows, {}, watchTodo)], ['gen-ovd']);
+});
+
+test('doneItemIds ignores a session for a different show', () => {
+  const items = [{ id: 'gen-ovd', url: 'https://podcasts.apple.com/x', show: 'On va déguster' }];
+  const rows = [{ type: 'podcast', title: 'E', channel: 'Bouffons', language: 'fr', video_id: '' }];
+  assert.deepEqual([...doneItemIds(items, rows, {}, { 'fr|podcast|E|Bouffons|': 'done' })], []);
+});
+
+test('doneItemIds says nothing about an item with no video and no show', () => {
+  const items = [{ id: 'lyon-bouchons', url: yt() }];
+  const rows = [{ video_id: 'V1', type: 'youtube', title: 'x', channel: 'c', language: 'fr' }];
+  assert.deepEqual([...doneItemIds(items, rows, { V1: { done: true } }, {})], []);
+});
+
+test('doneItemIds copes with empty everything', () => {
+  assert.deepEqual([...doneItemIds([], [], {}, {})], []);
+  assert.deepEqual([...doneItemIds(undefined, undefined, undefined, undefined)], []);
 });
