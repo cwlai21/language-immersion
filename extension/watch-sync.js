@@ -98,7 +98,9 @@ registerSurface({
     let changed = false;
     for (const id of keys) {
       if (next[id] && !!next[id].done !== done) {
-        next[id] = { ...next[id], done };
+        // withDoneAt, so a video ticked from another page carries the same
+        // finished-at stamp the watchlist's own checkbox would have given it.
+        next[id] = withDoneAt(next[id], done);
         changed = true;
       }
     }

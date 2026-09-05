@@ -71,6 +71,23 @@ and a quick manual-entry form (for podcasts listened outside the browser).
   ✈️ Voyage checklist and it is ticked in all of them, so a finished video is
   confirmed once.
 
+### 📺 À regarder
+
+Videos pulled from your YouTube playlist by the background poller, kept in
+`kv_state` under `video-todo` so the list follows you across machines.
+
+What's still to watch sits on top, newest addition first — videos that import
+already-watched carry an `addedAt` of "now", so a plain newest-first sort would
+bury what you actually mean to watch. Finished ones follow, **most recently
+finished first**, each showing when: "aujourd'hui", "hier", or a short date, on
+the same 4am-to-4am day as everything else, so a 2am finish reads as last
+night. Ticking stamps `doneAt` and unticking clears it, whether the tick
+happens here or arrives from another list.
+
+Videos finished before `doneAt` existed have no stamp. They keep to the end of
+the finished half, ordered by when they were added, rather than claiming to
+have been watched at the epoch or just now.
+
 ### Shared ticks (`watch-sync.js`)
 
 Each list keys its items differently — À regarder by `videoId`, the dashboard by

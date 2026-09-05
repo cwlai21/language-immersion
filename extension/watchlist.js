@@ -1,7 +1,8 @@
 /* "À regarder" — videos pulled from the YouTube "français" playlist by the
  * background poller (see background.js), stored in the shared kv_state row so
  * the list follows you across machines. Items:
- *   video-todo = { [videoId]: { videoId, title, channel, lang, addedAt, done } }
+ *   video-todo = { [videoId]: { videoId, title, channel, lang, addedAt, done,
+ *                                 doneAt } }
  * This page only displays and edits the list; the background worker owns
  * filling it and removing videos from the playlist. */
 
@@ -39,12 +40,9 @@ async function saveTodo(mutate) {
 function render() {
   const list = document.getElementById('list');
   list.innerHTML = '';
-  // Watched videos import pre-ticked, and their addedAt is "now", so a plain
-  // newest-first sort would pile them on top of what you actually still want
-  // to watch. Unwatched first, newest-first within each half.
-  const items = Object.values(todo).sort(
-    (a, b) => (!!a.done - !!b.done) || (b.addedAt || 0) - (a.addedAt || 0),
-  );
+  // Still to watch first, then finished with the most recently finished on
+  // top — compareWatchlist in rules.js, where it is covered by tests.
+  const items = Object.values(todo).sort(compareWatchlist);
   const doneCount = items.filter((i) => i.done).length;
   document.getElementById('count').textContent =
     items.length ? `${items.length - doneCount} à regarder · ${items.length} en tout` : '';
@@ -64,10 +62,12 @@ function render() {
     box.checked = !!item.done;
     box.onchange = () => {
       const done = box.checked;
+      const stamped = withDoneAt(item, done);
       row.classList.toggle('done', done);
-      item.done = done; // optimistic
+      Object.assign(item, stamped); // optimistic
+      if (!done) delete item.doneAt;
       saveTodo((latest) => {
-        if (latest[item.videoId]) latest[item.videoId].done = done;
+        if (latest[item.videoId]) latest[item.videoId] = withDoneAt(latest[item.videoId], done);
         return latest;
       }).then(render);
       // Tick the same video on every other list that knows it, so a finished
@@ -92,7 +92,11 @@ function render() {
     // formatDuration comes from youtube-todo-rules.js. Unknown lengths (older
     // imports not yet backfilled, live streams) just show the channel alone.
     const dur = formatDuration(item.durationSec);
-    meta.textContent = [item.channel || '', dur].filter(Boolean).join(' · ');
+    // A finished video says when — the list is ordered by it, so the order
+    // only reads as an order if the dates are on show.
+    const finished = item.done ? doneAtLabel(item.doneAt) : '';
+    meta.textContent = [item.channel || '', dur, finished && `✓ ${finished}`]
+      .filter(Boolean).join(' · ');
     info.append(title, meta);
 
     const flag = document.createElement('span');

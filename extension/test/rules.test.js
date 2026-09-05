@@ -10,6 +10,7 @@ const {
   minutesByDate, computeStats,
   sessionLang, normType, watchKey, sessionWatchKeys, startsDone,
   videoIdFromUrl, normShow, contentLinks, doneItemIds,
+  withDoneAt, compareWatchlist, doneAtLabel,
   assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
   streakThreshold, goalStreak,
 } = require('../rules.js');
@@ -435,4 +436,77 @@ test('doneItemIds says nothing about an item with no video and no show', () => {
 test('doneItemIds copes with empty everything', () => {
   assert.deepEqual([...doneItemIds([], [], {}, {})], []);
   assert.deepEqual([...doneItemIds(undefined, undefined, undefined, undefined)], []);
+});
+
+/* ── À regarder: finishing a video ──────────────────────── */
+
+test('withDoneAt stamps the time on the way in and clears it on the way out', () => {
+  const entry = { videoId: 'V1', title: 't', done: false };
+  const done = withDoneAt(entry, true, 1000);
+  assert.equal(done.done, true);
+  assert.equal(done.doneAt, 1000);
+  assert.equal(done.title, 't', 'the rest of the entry survives');
+  const undone = withDoneAt(done, false);
+  assert.equal(undone.done, false);
+  assert.ok(!('doneAt' in undone), 'an unticked video has no finished-at time');
+});
+
+test('withDoneAt does not mutate the entry it is given', () => {
+  const entry = { videoId: 'V1', done: false };
+  withDoneAt(entry, true, 1000);
+  assert.deepEqual(entry, { videoId: 'V1', done: false });
+});
+
+test('compareWatchlist keeps what is still to watch on top', () => {
+  const order = [
+    { videoId: 'done', done: true, doneAt: 9000, addedAt: 1 },
+    { videoId: 'todo', done: false, addedAt: 1 },
+  ].sort(compareWatchlist).map((i) => i.videoId);
+  assert.deepEqual(order, ['todo', 'done']);
+});
+
+test('compareWatchlist puts the most recently finished first', () => {
+  const order = [
+    { videoId: 'old', done: true, doneAt: 1000 },
+    { videoId: 'newest', done: true, doneAt: 3000 },
+    { videoId: 'middle', done: true, doneAt: 2000 },
+  ].sort(compareWatchlist).map((i) => i.videoId);
+  assert.deepEqual(order, ['newest', 'middle', 'old']);
+});
+
+test('compareWatchlist sorts unwatched by newest added', () => {
+  const order = [
+    { videoId: 'older', done: false, addedAt: 1000 },
+    { videoId: 'newer', done: false, addedAt: 2000 },
+  ].sort(compareWatchlist).map((i) => i.videoId);
+  assert.deepEqual(order, ['newer', 'older']);
+});
+
+test('compareWatchlist leaves videos finished before doneAt existed at the end', () => {
+  // No stamp must not read as "finished at the epoch and therefore oldest" in
+  // one direction or "just now" in the other — they go last, by addedAt.
+  const order = [
+    { videoId: 'unstamped-old', done: true, addedAt: 1000 },
+    { videoId: 'stamped', done: true, doneAt: 5000, addedAt: 1 },
+    { videoId: 'unstamped-new', done: true, addedAt: 2000 },
+  ].sort(compareWatchlist).map((i) => i.videoId);
+  assert.deepEqual(order, ['stamped', 'unstamped-new', 'unstamped-old']);
+});
+
+test('doneAtLabel says today, yesterday, or the date', () => {
+  const now = new Date('2026-09-05T20:00:00');
+  const at = (iso) => new Date(iso).getTime();
+  assert.equal(doneAtLabel(at('2026-09-05T10:00:00'), now), "aujourd'hui");
+  assert.equal(doneAtLabel(at('2026-09-04T22:00:00'), now), 'hier');
+  assert.match(doneAtLabel(at('2026-08-21T15:00:00'), now), /21/);
+});
+
+test('doneAtLabel buckets on the 4am day, so 2am is still last night', () => {
+  const now = new Date('2026-09-05T20:00:00');
+  assert.equal(doneAtLabel(new Date('2026-09-05T02:00:00').getTime(), now), 'hier');
+});
+
+test('doneAtLabel says nothing without a stamp', () => {
+  assert.equal(doneAtLabel(0), '');
+  assert.equal(doneAtLabel(undefined), '');
 });

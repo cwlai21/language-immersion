@@ -23,6 +23,49 @@ function startOfWeek(d) {
   return out;
 }
 
+// ── À regarder: finishing a video ────────────
+
+// A video-todo entry records when it was ticked, so the list can show it and
+// order by it. Unticking clears the stamp: it isn't finished any more, and a
+// stale time would sort it as though it were.
+function withDoneAt(entry, done, now = Date.now()) {
+  const next = { ...(entry || {}), done: !!done };
+  if (done) next.doneAt = now;
+  else delete next.doneAt;
+  return next;
+}
+
+// Still to watch first, newest addition first — watched videos import
+// pre-ticked with addedAt of "now", so a plain newest-first sort would pile
+// them on top of what you actually still want to watch. Finished ones follow,
+// most recently finished first. Entries ticked before doneAt existed have no
+// stamp; they keep to the end of the finished half, ordered by when they were
+// added, rather than jumping to the top as if just watched.
+function compareWatchlist(a, b) {
+  if (!!a.done !== !!b.done) return (a.done ? 1 : 0) - (b.done ? 1 : 0);
+  if (a.done) {
+    const byFinished = (b.doneAt || 0) - (a.doneAt || 0);
+    if (byFinished) return byFinished;
+  }
+  return (b.addedAt || 0) - (a.addedAt || 0);
+}
+
+// When a video was finished, for the list: "aujourd'hui", "hier", or a short
+// date. Bucketed on the tracker's 4am day like everything else, so finishing
+// something at 2am reads as last night rather than today.
+function doneAtLabel(doneAt, now = new Date()) {
+  if (!doneAt) return '';
+  const day = dateKey(logicalNow(new Date(doneAt)));
+  if (day === todayKey(now)) return "aujourd'hui";
+  const yesterday = logicalNow(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (day === dateKey(yesterday)) return 'hier';
+  const when = new Date(doneAt);
+  const options = { day: 'numeric', month: 'short' };
+  if (when.getFullYear() !== now.getFullYear()) options.year = 'numeric';
+  return when.toLocaleDateString('fr-FR', options);
+}
+
 // ── Session-stats aggregation ────────────────
 // Shared by the dashboard (charts, stats cards) and the popup (quick
 // today/week/month totals) — the two used to compute this by hand,
@@ -303,6 +346,7 @@ if (typeof module !== 'undefined') {
     minutesByDate, computeStats,
     sessionLang, KNOWN_TYPES, normType, TODO_TYPES, watchKey, sessionWatchKeys, startsDone,
     videoIdFromUrl, normShow, contentLinks, doneItemIds,
+    withDoneAt, compareWatchlist, doneAtLabel,
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
     STREAK_GOAL_HISTORY, streakThreshold, goalStreak,
   };
