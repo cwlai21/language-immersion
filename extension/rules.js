@@ -60,9 +60,12 @@ function doneAtLabel(doneAt, now = new Date()) {
   const yesterday = logicalNow(now);
   yesterday.setDate(yesterday.getDate() - 1);
   if (day === dateKey(yesterday)) return 'hier';
-  const when = new Date(doneAt);
+  // The 4am day, not the calendar date. A video finished at 01:30 read as
+  // "hier" the day before — showing it as the 28th afterwards would have the
+  // same evening answering to two different dates.
+  const when = logicalNow(new Date(doneAt));
   const options = { day: 'numeric', month: 'short' };
-  if (when.getFullYear() !== now.getFullYear()) options.year = 'numeric';
+  if (when.getFullYear() !== logicalNow(now).getFullYear()) options.year = 'numeric';
   return when.toLocaleDateString('fr-FR', options);
 }
 

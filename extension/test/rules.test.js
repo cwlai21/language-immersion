@@ -506,6 +506,20 @@ test('doneAtLabel buckets on the 4am day, so 2am is still last night', () => {
   assert.equal(doneAtLabel(new Date('2026-09-05T02:00:00').getTime(), now), 'hier');
 });
 
+test('doneAtLabel dates a late-night finish by the same day it called "hier"', () => {
+  // Finished 01:30 on the 28th — the evening of the 27th by the tracker's day.
+  // It reads "hier" while the reader is still on the 28th, so once it falls
+  // back to a date that date must be the 27th, not the 28th.
+  const finished = new Date('2026-08-28T01:30:00').getTime();
+  assert.equal(doneAtLabel(finished, new Date('2026-08-28T10:00:00')), 'hier');
+  assert.match(doneAtLabel(finished, new Date('2026-08-30T10:00:00')), /27/);
+});
+
+test('doneAtLabel dates a daytime finish by its own date', () => {
+  const finished = new Date('2026-08-28T15:00:00').getTime();
+  assert.match(doneAtLabel(finished, new Date('2026-08-30T10:00:00')), /28/);
+});
+
 test('doneAtLabel says nothing without a stamp', () => {
   assert.equal(doneAtLabel(0), '');
   assert.equal(doneAtLabel(undefined), '');

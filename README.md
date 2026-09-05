@@ -79,9 +79,10 @@ Videos pulled from your YouTube playlist by the background poller, kept in
 What's still to watch sits on top, newest addition first — videos that import
 already-watched carry an `addedAt` of "now", so a plain newest-first sort would
 bury what you actually mean to watch. Finished ones follow, **most recently
-finished first**, each showing when: "aujourd'hui", "hier", or a short date, on
-the same 4am-to-4am day as everything else, so a 2am finish reads as last
-night. Ticking stamps `doneAt` and unticking clears it, whether the tick
+finished first**, each showing when: "aujourd'hui", "hier", or a short date.
+The date is the 4am-to-4am day, like every other date here — a 2am finish
+reads as last night, and the short date it falls back to two days later names
+that same evening rather than the calendar day it happened to tick over into. Ticking stamps `doneAt` and unticking clears it, whether the tick
 happens here or arrives from another list.
 
 Videos finished before `doneAt` existed have no stamp. They keep to the end of
