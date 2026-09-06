@@ -7,7 +7,12 @@
  * it here ticks it on the dashboard and in À regarder, and the other way
  * about. Items with neither (a YouTube *search* link, an article) have nothing
  * to match on and stay hand-ticked, which is fine: most of this list is
- * "go and find something on this", not one identifiable video. */
+ * "go and find something on this", not one identifiable video.
+ *
+ * `sec` is a real measured length, present only on items that link to one
+ * specific video. A search link has no single thing to time, and a podcast
+ * item names a show rather than an episode, so most items have none — the row
+ * simply doesn't show a length, the way À regarder handles an unknown one. */
 
 const yt = (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
 
@@ -36,7 +41,7 @@ const SECTIONS = [
     title: '🦁 Lyon — capitale de la gastronomie',
     blurb: 'Bouchons, traboules et mères lyonnaises.',
     items: [
-      { id: 'lyon-eb', lang: 'fr', kind: '▶️', title: 'Échappées belles — « Week-end gourmand à Lyon »',
+      { id: 'lyon-eb', lang: 'fr', kind: '▶️', sec: 5495, title: 'Échappées belles — « Week-end gourmand à Lyon »',
         desc: 'Documentaire complet France 5 (officiel, ~1h30).', url: 'https://www.youtube.com/watch?v=uyLbScMzyi8' },
       { id: 'lyon-bouchons', lang: 'fr', kind: '▶️', title: 'Les bouchons lyonnais — reportages',
         desc: 'Quenelles, tablier de sapeur, cervelle de canut… à connaître avant de commander.', url: yt('bouchon lyonnais reportage cuisine') },
@@ -64,7 +69,7 @@ const SECTIONS = [
     title: '🌊 Nice',
     blurb: 'Comté de Nice: une histoire italienne, une cuisine à part.',
     items: [
-      { id: 'nice-eb', lang: 'fr', kind: '▶️', title: 'Échappées belles — « Nice, l’art de la fête »',
+      { id: 'nice-eb', lang: 'fr', kind: '▶️', sec: 5091, title: 'Échappées belles — « Nice, l’art de la fête »',
         desc: 'Documentaire complet France 5 (officiel).', url: 'https://www.youtube.com/watch?v=c6axar1j8GM' },
       { id: 'nice-cuisine', lang: 'fr', kind: '▶️', title: 'La cuisine niçoise — socca, pissaladière, pan bagnat',
         desc: 'La socca de Chez Pipo vs. le Vieux Nice: repère où manger.', url: yt('cuisine niçoise socca reportage') },
@@ -80,9 +85,9 @@ const SECTIONS = [
         desc: 'La ville se raconte: histoire, culture, interviews d’Antibois — sur Spotify/Apple, donc compté dans ton tracker.', url: 'https://open.spotify.com/show/11ntTLqnzqs5P9WQuSTKWi' },
       { id: 'ant-ici', lang: 'fr', kind: '🎙️', show: '1000 raisons d’aimer la Côte d’Azur', title: '« Antibes : 2 500 ans d’histoire face à la mer » (Radio France)',
         desc: 'Épisode de « 1000 raisons d’aimer la Côte d’Azur »: fondation grecque, fortifications, essor touristique.', url: 'https://www.ici.fr/emissions/1000-raisons-d-aimer-la-cote-d-azur/antibes-2-500-ans-d-histoire-face-a-la-mer-2506120' },
-      { id: 'ant-berzingue', lang: 'fr', kind: '▶️', title: 'L’histoire d’Antibes Juan-les-Pins… À toute berzingue !',
+      { id: 'ant-berzingue', lang: 'fr', kind: '▶️', sec: 387, title: 'L’histoire d’Antibes Juan-les-Pins… À toute berzingue !',
         desc: 'Toute l’histoire en 5 min, débit rapide — bon défi de compréhension avant d’arriver.', url: 'https://www.youtube.com/watch?v=uviSD7iB1M4' },
-      { id: 'ant-adresses', lang: 'fr', kind: '▶️', title: 'Antibes, bienvenue sur la Côte d’Azur | Mes bonnes adresses',
+      { id: 'ant-adresses', lang: 'fr', kind: '▶️', sec: 629, title: 'Antibes, bienvenue sur la Côte d’Azur | Mes bonnes adresses',
         desc: 'Une résidente partage ses bonnes adresses — à voir juste avant de partir pour noter des lieux.', url: 'https://www.youtube.com/watch?v=eeFycGv7kRk' },
       { id: 'ant-paroles', lang: 'fr', kind: '🎙️', show: 'Paroles d’Antibois', title: 'Paroles d’Antibois — témoignages d’habitants',
         desc: 'Français authentique non scripté: des Antibois racontent leur ville et son histoire.', url: 'https://www.antibes-juanlespins.com/sorties-loisirs/antibes-ville-de-culture/la-culture-au-numerique/paroles-dantibois/1939-1945-la-seconde-guerre-mondiale/podcast' },
@@ -92,7 +97,7 @@ const SECTIONS = [
     title: '🏰 Besançon',
     blurb: 'Vauban, l’horlogerie et le pays du Comté.',
     items: [
-      { id: 'bes-eb', lang: 'fr', kind: '▶️', title: 'Échappées belles — « Échappée en Franche-Comté »',
+      { id: 'bes-eb', lang: 'fr', kind: '▶️', sec: 5363, title: 'Échappées belles — « Échappée en Franche-Comté »',
         desc: 'Documentaire complet France 5 (officiel).', url: 'https://www.youtube.com/watch?v=jGl5xkg7sD4' },
       { id: 'bes-citadelle', lang: 'fr', kind: '▶️', title: 'La Citadelle de Vauban (UNESCO)',
         desc: 'Le chef-d’œuvre de Vauban au-dessus de la boucle du Doubs.', url: yt('citadelle besançon vauban documentaire') },
@@ -190,9 +195,9 @@ const SECTIONS = [
     title: '⛲ Genève & le Léman',
     blurb: 'La Suisse romande — même langue, autre pays.',
     items: [
-      { id: 'gen2-eb', lang: 'fr', kind: '▶️', title: 'Échappées belles — « Autour du Léman »',
+      { id: 'gen2-eb', lang: 'fr', kind: '▶️', sec: 3575, title: 'Échappées belles — « Autour du Léman »',
         desc: 'Croisière sur le lac, Genève incluse (officiel).', url: 'https://www.youtube.com/watch?v=tUFin66qb1Q' },
-      { id: 'gen2-leman', lang: 'fr', kind: '▶️', title: '« Week-end sur les rives du Léman »',
+      { id: 'gen2-leman', lang: 'fr', kind: '▶️', sec: 5426, title: '« Week-end sur les rives du Léman »',
         desc: 'L’épisode plus récent (2025), côté art de vivre.', url: 'https://www.youtube.com/watch?v=ATxd3GRamx0' },
       { id: 'gen2-cern', lang: 'fr', kind: '▶️', title: 'Le CERN — visite en français',
         desc: 'Réserve la visite gratuite; le vocabulaire scientifique en français est un bon défi.', url: yt('CERN visite guidée français') },
@@ -304,7 +309,12 @@ function render() {
 
       const tags = document.createElement('span');
       tags.className = 'trip-tags';
-      tags.textContent = `${item.lang === 'fr' ? '🇫🇷' : '🇬🇧'} ${item.kind}`;
+      // formatDuration comes from youtube-todo-rules.js, the same one À
+      // regarder uses, so a length reads identically on both pages. Items
+      // without a measured length just show the flag and kind.
+      const dur = formatDuration(item.sec);
+      tags.textContent = [`${item.lang === 'fr' ? '🇫🇷' : '🇬🇧'} ${item.kind}`, dur]
+        .filter(Boolean).join(' · ');
 
       row.append(box, info, tags);
       div.appendChild(row);
