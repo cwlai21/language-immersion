@@ -9,10 +9,15 @@
  * to match on and stay hand-ticked, which is fine: most of this list is
  * "go and find something on this", not one identifiable video.
  *
- * `sec` is a real measured length, present only on items that link to one
- * specific video. A search link has no single thing to time, and a podcast
- * item names a show rather than an episode, so most items have none — the row
- * simply doesn't show a length, the way À regarder handles an unknown one. */
+ * `sec` is a real measured length, on the items that link to one specific
+ * video or episode. `approx` is the median of a show's last 40 published
+ * episodes, for podcast items that name a show rather than an episode — shown
+ * as "≈35 min" because that is the honest precision.
+ *
+ * Items have neither when there is nothing to measure (a search link) or no
+ * published durations to read (a feed that omits them, a show not on Apple).
+ * Those rows simply show no length, the way À regarder handles a video whose
+ * length it doesn't know. */
 
 const yt = (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
 
@@ -21,15 +26,15 @@ const SECTIONS = [
     title: '🎧 Pendant tout le voyage',
     blurb: 'Des valeurs sûres à écouter en route — trajets en train Lyon → Genève inclus.',
     items: [
-      { id: 'gen-innerfrench', lang: 'fr', kind: '🎙️', show: 'InnerFrench', title: 'InnerFrench — épisodes culture & société',
+      { id: 'gen-innerfrench', lang: 'fr', kind: '🎙️', approx: 2040, show: 'InnerFrench', title: 'InnerFrench — épisodes culture & société',
         desc: 'Français clair et lent, parfait en déplacement.', url: 'https://innerfrench.com/podcast/' },
-      { id: 'gen-panache', lang: 'fr', kind: '🎙️', show: 'French With Panache', title: 'French With Panache — conversations réelles',
+      { id: 'gen-panache', lang: 'fr', kind: '🎙️', approx: 2160, show: 'French With Panache', title: 'French With Panache — conversations réelles',
         desc: 'Déjà dans tes abonnements — pioche les épisodes voyage/cuisine.', url: 'https://podcasts.apple.com/fr/podcast/french-with-panache-interesting-conversations-in-real/id1699597868' },
       { id: 'gen-ovd', lang: 'fr', kind: '🎙️', show: 'On va déguster', title: 'On va déguster (France Inter)',
         desc: 'LA référence gastronomie — cherche les épisodes Lyon, Provence, fromages.', url: 'https://podcasts.apple.com/fr/podcast/on-va-d%C3%A9guster/id382262093' },
-      { id: 'gen-bouffons', lang: 'fr', kind: '🎙️', show: 'Bouffons', title: 'Bouffons (Nouvelles Écoutes)',
+      { id: 'gen-bouffons', lang: 'fr', kind: '🎙️', approx: 1740, show: 'Bouffons', title: 'Bouffons (Nouvelles Écoutes)',
         desc: 'La culture culinaire française décortiquée, 30 min par épisode.', url: 'https://podcasts.apple.com/fr/podcast/bouffons/id1324604234' },
-      { id: 'gen-duolingo', lang: 'en', kind: '🎙️', show: 'Duolingo French Podcast', title: 'Duolingo French Podcast',
+      { id: 'gen-duolingo', lang: 'en', kind: '🎙️', approx: 1440, show: 'Duolingo French Podcast', title: 'Duolingo French Podcast',
         desc: 'Histoires vraies mi-anglais mi-français — les jours de fatigue.', url: 'https://podcast.duolingo.com/french' },
       { id: 'gen-easyfrench', lang: 'fr', kind: '▶️', title: 'Easy French — sous-titres FR+EN incrustés',
         desc: 'Micro-trottoirs avec double sous-titrage sur chaque vidéo — cherchez « Paris ou Marseille ? » avec InnerFrench.', url: yt('easy french marseille paris') },
@@ -81,7 +86,7 @@ const SECTIONS = [
     title: '⚓ Antibes Juan-les-Pins',
     blurb: 'Entre Nice et Cannes: remparts grecs, port Vauban et musée Picasso.',
     items: [
-      { id: 'ant-podcast', lang: 'fr', kind: '🎙️', show: 'Le podcast d’Antibes Juan-les-Pins', title: 'Le podcast d’Antibes Juan-les-Pins — officiel',
+      { id: 'ant-podcast', lang: 'fr', kind: '🎙️', approx: 1080, show: 'Le podcast d’Antibes Juan-les-Pins', title: 'Le podcast d’Antibes Juan-les-Pins — officiel',
         desc: 'La ville se raconte: histoire, culture, interviews d’Antibois — sur Spotify/Apple, donc compté dans ton tracker.', url: 'https://open.spotify.com/show/11ntTLqnzqs5P9WQuSTKWi' },
       { id: 'ant-ici', lang: 'fr', kind: '🎙️', show: '1000 raisons d’aimer la Côte d’Azur', title: '« Antibes : 2 500 ans d’histoire face à la mer » (Radio France)',
         desc: 'Épisode de « 1000 raisons d’aimer la Côte d’Azur »: fondation grecque, fortifications, essor touristique.', url: 'https://www.ici.fr/emissions/1000-raisons-d-aimer-la-cote-d-azur/antibes-2-500-ans-d-histoire-face-a-la-mer-2506120' },
@@ -115,7 +120,7 @@ const SECTIONS = [
         desc: 'Le télépéage, les 80 km/h, la fameuse priorité à droite en ville.', url: yt('conduire en france conseils autoroute péage priorité à droite') },
       { id: 'route-vignette', lang: 'fr', kind: '▶️', title: 'Conduire en Suisse — la vignette autoroutière',
         desc: 'Vignette obligatoire (~40 CHF), limites différentes, radars impitoyables — à voir AVANT de passer la frontière.', url: yt('conduire en suisse vignette autoroute règles') },
-      { id: 'route-baladeurs', lang: 'fr', kind: '🎙️', show: 'Les Baladeurs', title: 'Les Baladeurs (Les Others)',
+      { id: 'route-baladeurs', lang: 'fr', kind: '🎙️', approx: 2940, show: 'Les Baladeurs', title: 'Les Baladeurs (Les Others)',
         desc: 'Récits d’aventure immersifs — le podcast parfait pour les longues routes.', url: 'https://podcasts.apple.com/fr/podcast/les-baladeurs/id1388330691' },
     ],
   },
@@ -175,7 +180,7 @@ const SECTIONS = [
     title: '💎 Maisons de luxe — l’histoire',
     blurb: 'Hermès, Chanel, LVMH… Les maisons racontent elles-mêmes leur histoire — et Lyon (la soie !) en fait partie.',
     items: [
-      { id: 'luxe-loudana', lang: 'fr', kind: '🎙️', show: 'Podcast du Luxe', title: 'Podcast du Luxe (Lou Dana)',
+      { id: 'luxe-loudana', lang: 'fr', kind: '🎙️', approx: 3420, show: 'Podcast du Luxe', title: 'Podcast du Luxe (Lou Dana)',
         desc: 'Décryptage des grandes maisons, épisode par épisode.', url: 'https://podcasts.apple.com/fr/podcast/podcast-du-luxe-par-lou-dana/id1763830244' },
       { id: 'luxe-hermes', lang: 'fr', kind: '🎙️', show: 'Le Monde d’Hermès', title: 'Le Monde d’Hermès — podcast officiel',
         desc: 'La maison raconte ses artisans et son histoire, production superbe.', url: 'https://open.spotify.com/search/le%20monde%20d%27herm%C3%A8s' },
@@ -185,7 +190,7 @@ const SECTIONS = [
         desc: 'LE documentariste de la mode, drôle et sous-titré — Dior, Chanel, Vuitton de l’intérieur.', url: yt('loïc prigent atelier dior chanel coulisses') },
       { id: 'luxe-arnault', lang: 'fr', kind: '▶️', title: 'HugoDécrypte × Bernard Arnault',
         desc: 'Le patron de LVMH interviewé par la chaîne que vous suivez déjà.', url: yt('hugodécrypte bernard arnault interview') },
-      { id: 'luxe-acquired', lang: 'en', kind: '🎙️', show: 'Acquired', title: 'Acquired — « LVMH » (4h!)',
+      { id: 'luxe-acquired', lang: 'en', kind: '🎙️', sec: 12300, show: 'Acquired', title: 'Acquired — « LVMH »',
         desc: 'Toute la saga LVMH en anglais — le récit business de référence, transcript complet sur le site.', url: 'https://www.acquired.fm/episodes/lvmh' },
       { id: 'luxe-soie', lang: 'fr', kind: '▶️', title: 'La soie lyonnaise — des canuts aux carrés Hermès',
         desc: 'À voir avant Lyon: la Croix-Rousse, la Maison des Canuts, et pourquoi le luxe français est né là.', url: yt('soie lyonnaise canuts histoire documentaire') },
@@ -312,7 +317,9 @@ function render() {
       // formatDuration comes from youtube-todo-rules.js, the same one À
       // regarder uses, so a length reads identically on both pages. Items
       // without a measured length just show the flag and kind.
-      const dur = formatDuration(item.sec);
+      // A measured length where there is one thing to time; otherwise a
+      // typical episode length, marked "≈" so the two are never confused.
+      const dur = formatDuration(item.sec) || approxLength(item.approx);
       tags.textContent = [`${item.lang === 'fr' ? '🇫🇷' : '🇬🇧'} ${item.kind}`, dur]
         .filter(Boolean).join(' · ');
 

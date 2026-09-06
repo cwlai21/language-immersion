@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { planYoutubeTodoSync, parseIsoDuration, formatDuration } = require('../youtube-todo-rules.js');
+const { planYoutubeTodoSync, parseIsoDuration, formatDuration, approxLength } = require('../youtube-todo-rules.js');
 
 const item = (videoId, playlistItemId, extra = {}) =>
   ({ videoId, playlistItemId, title: 't-' + videoId, channel: 'c', ...extra });
@@ -115,4 +115,24 @@ test('formatDuration labels lengths the way YouTube does', () => {
   assert.equal(formatDuration(3903), '1:05:03');
   assert.equal(formatDuration(0), '');
   assert.equal(formatDuration(null), '');
+});
+
+test('approxLength writes a typical length loosely, not as a precise time', () => {
+  // "≈35 min" is honest about a median; "35:12" would claim precision the
+  // number does not have.
+  assert.equal(approxLength(18 * 60), '≈18 min');
+  assert.equal(approxLength(34 * 60), '≈34 min');
+  assert.equal(approxLength(89 * 60), '≈89 min');
+});
+
+test('approxLength switches to hours once minutes stop reading well', () => {
+  assert.equal(approxLength(90 * 60), '≈1 h 30');
+  assert.equal(approxLength(205 * 60), '≈3 h 25');
+  assert.equal(approxLength(240 * 60), '≈4 h');
+});
+
+test('approxLength says nothing without a length', () => {
+  assert.equal(approxLength(0), '');
+  assert.equal(approxLength(undefined), '');
+  assert.equal(approxLength(-5), '');
 });

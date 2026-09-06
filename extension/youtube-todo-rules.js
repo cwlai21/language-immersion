@@ -62,6 +62,18 @@ function formatDuration(sec) {
   return h ? `${h}:${pad(m)}:${pad(rest)}` : `${m}:${pad(rest)}`;
 }
 
+// A typical length rather than a measured one — for a podcast entry, which
+// names a show and not an episode. Written loosely on purpose: "≈35 min" is
+// an honest answer where "35:12" would claim a precision that isn't there.
+function approxLength(sec) {
+  if (!sec || sec < 0) return '';
+  const minutes = Math.round(sec / 60);
+  if (minutes < 90) return `≈${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `≈${hours} h ${String(rest).padStart(2, '0')}` : `≈${hours} h`;
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { planYoutubeTodoSync, parseIsoDuration, formatDuration };
+  module.exports = { planYoutubeTodoSync, parseIsoDuration, formatDuration, approxLength };
 }
