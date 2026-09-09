@@ -21,13 +21,6 @@ let statsRows = null;    // cached rows for the current stats window
 
 const SERIES_SITE_RE = /https:\/\/(gimytv\.biz|gimyai\.tw|[^/]*\.netflix\.com|[^/]*\.disneyplus\.com)\//;
 
-function asrLanguage(video) {
-  const asr = (video.asrLang || '').toLowerCase();
-  if (asr.startsWith('fr')) return 'fr';
-  if (asr.startsWith('en')) return 'en';
-  return null;
-}
-
 /* ── Current video status ─────────────────── */
 async function loadStatus() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -134,10 +127,12 @@ function renderStatus() {
   const { overrides = {}, trackedChannels = [], currentSession } = tracking || {};
   const ov = overrides[video.videoId];
   const channelEntry = trackedChannels.find((c) => c.id === video.channelId);
-  const detected = asrLanguage(video);
-  // No ASR yet (e.g. a video too new to be auto-captioned) — fall back to
-  // guessing from the title, same precedence as the background.
-  const titleGuess = !detected ? guessLangFromTitle(video.title) : null;
+  const asr = asrLanguage(video);
+  const detected = asr === 'fr' || asr === 'en' ? asr : null;
+  // No captions at all yet (e.g. a video too new to be auto-captioned) — fall
+  // back to guessing from the title, same precedence as the background. A
+  // video captioned in some other language is not guessed at.
+  const titleGuess = asr === null ? guessLangFromTitle(video.title) : null;
 
   // Effective language + status label (same precedence as the background).
   let effLang = null;

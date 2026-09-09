@@ -48,6 +48,28 @@ For videos without captions (or misdetections), the popup offers:
 - **Always track this channel** — channel allowlist, remembered with the
   channel's language.
 
+### Which language a video counts as
+
+In precedence order (`lang-detect.js`, `trackDecision`):
+
+1. a per-video override you set in the popup;
+2. a channel you pinned to a language;
+3. **the veto** — a CJK/kana/hangul title or channel name means the video is
+   not French or English, whatever else says otherwise;
+4. YouTube's auto-caption language;
+5. a guess from the title, only when there are no captions at all yet.
+
+The veto exists because step 4 cannot be trusted on its own: YouTube's
+auto-captioner labels plenty of Mandarin videos as English — 皮卡邱I
+网球发球慢动作 carries exactly one caption track, `kind: "asr"`,
+`languageCode: "en"`. Roughly 5 h of listening time had been counted as English
+that way. A French or English video does not have a CJK title, so the title
+settles it.
+
+A channel with a CJK name but genuinely English audio (English-teaching
+channels, which is most of the real exceptions) counts again as soon as you pin
+it in the popup — the pin sits above the veto for exactly that reason.
+
 ## Popup
 
 Click the toolbar icon to see: tracking status of the current tab, 🇫🇷/🇬🇧

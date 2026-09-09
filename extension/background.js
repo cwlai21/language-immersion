@@ -149,28 +149,9 @@ function todayKey() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function asrLanguage(video) {
-  const asr = (video.asrLang || '').toLowerCase();
-  if (asr.startsWith('fr')) return 'fr';
-  if (asr.startsWith('en')) return 'en';
-  return null;
-}
-
-// Returns { lang: 'fr'|'en', reason: 'override'|'channel'|'asr'|'title' } or null.
-function trackDecision(video, overrides, trackedChannels) {
-  const ov = overrides[video.videoId];
-  if (ov !== undefined) return ov ? { lang: ov, reason: 'override' } : null;
-  const ch = trackedChannels.find((c) => c.id === video.channelId);
-  if (ch) return { lang: ch.lang, reason: 'channel' };
-  const lang = asrLanguage(video);
-  if (lang) return { lang, reason: 'asr' };
-  // No ASR yet — e.g. a video too new for YouTube to have auto-captioned.
-  // Fall back to a title guess until the periodic re-probe (page-bridge.js)
-  // finds real captions and this session's language self-corrects.
-  const hint = guessLangFromTitle(video.title);
-  if (hint) return { lang: hint, reason: 'title' };
-  return null;
-}
+// asrLanguage() and trackDecision() live in lang-detect.js, shared with the
+// popup (which showed the same precedence from its own copy) and covered by
+// the Node test suite.
 
 // The badge is global but heartbeats come from every YouTube tab — paused
 // background tabs must not wipe a badge set by the tab that's playing.
