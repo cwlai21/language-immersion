@@ -54,17 +54,21 @@ In precedence order (`lang-detect.js`, `trackDecision`):
 
 1. a per-video override you set in the popup;
 2. a channel you pinned to a language;
-3. **the veto** — a CJK/kana/hangul title or channel name means the video is
-   not French or English, whatever else says otherwise;
-4. YouTube's auto-caption language;
-5. a guess from the title, only when there are no captions at all yet.
+3. French auto-captions, which carry whatever the title looks like;
+4. **the veto** — an *English* caption label (or a title guess) does not
+   survive a CJK/kana/hangul title or channel name;
+5. English auto-captions, or a guess from the title when there are no captions
+   at all yet.
 
-The veto exists because step 4 cannot be trusted on its own: YouTube's
-auto-captioner labels plenty of Mandarin videos as English — 皮卡邱I
-网球发球慢动作 carries exactly one caption track, `kind: "asr"`,
-`languageCode: "en"`. Roughly 5 h of listening time had been counted as English
-that way. A French or English video does not have a CJK title, so the title
-settles it.
+The veto exists because YouTube's captioner falls back to English when it
+can't tell: 皮卡邱I 网球发球慢动作, a Mandarin video, carries exactly one caption
+track — `kind: "asr"`, `languageCode: "en"`. Roughly 5 h of listening time had
+been counted as English that way.
+
+It applies only to English, because only English is a fallback. YouTube never
+guesses French, so a French label is a real detection and keeps a French video
+on a Taiwanese distributor's channel — "Marius Fabre 法鉑馬賽肥皂 – 家族故事" —
+counting as French.
 
 A channel with a CJK name but genuinely English audio (English-teaching
 channels, which is most of the real exceptions) counts again as soon as you pin

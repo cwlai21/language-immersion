@@ -57,16 +57,23 @@ function trackDecision(video, overrides, trackedChannels) {
   const ch = (trackedChannels || []).find((c) => c.id === video.channelId);
   if (ch) return { lang: ch.lang, reason: 'channel' };
 
-  // YouTube's auto-captioner mislabels Mandarin audio as English often enough
-  // that its answer can't be taken at face value: a video titled
-  // 皮卡邱I 网球发球慢动作 carries one caption track, kind "asr", languageCode
-  // "en". A French or English video does not have a CJK title, so the title
-  // settles it and nothing below gets a vote.
-  if (hasNonLatinScript(video.title) || hasNonLatinScript(video.channel)) return null;
-
   const asr = asrLanguage(video);
-  if (asr === 'fr' || asr === 'en') return { lang: asr, reason: 'asr' };
+
+  // French captions are a deliberate detection, so they carry regardless of
+  // the title's script — that is what keeps a French video on a Taiwanese
+  // distributor's channel ("Marius Fabre 法鉑馬賽肥皂 – 家族故事") tracked.
+  if (asr === 'fr') return { lang: 'fr', reason: 'asr' };
+
   if (asr === 'other') return null; // captioned, just not in a language we track
+
+  // English is where YouTube's captioner lands when it cannot tell, which is
+  // how a Mandarin video ends up with a single caption track reading
+  // languageCode "en" — 皮卡邱I 网球发球慢动作 has exactly that. So an English
+  // label doesn't survive a title in another script, and neither does a guess
+  // from such a title. Only English: YouTube never falls back to French.
+  const foreignScript = hasNonLatinScript(video.title) || hasNonLatinScript(video.channel);
+  if (asr === 'en') return foreignScript ? null : { lang: 'en', reason: 'asr' };
+  if (foreignScript) return null;
 
   // No captions at all yet — e.g. a video too new for YouTube to have got to.
   // Fall back to a title guess until the periodic re-probe (page-bridge.js)

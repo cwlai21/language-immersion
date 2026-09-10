@@ -94,3 +94,20 @@ test('a CJK channel name vetoes even when the title is Latin', () => {
   const v = video({ title: 'MLB Highlights', channel: '緯來體育台', asrLang: 'en' });
   assert.equal(trackDecision(v, {}, []), null);
 });
+
+test('French captions carry a CJK title — the veto is about English only', () => {
+  // A French brand's own video on its Taiwanese distributor's channel: French
+  // audio, French captions, Chinese in the title. YouTube never falls back to
+  // French, so a French label is a real detection and outranks the script.
+  const v = video({
+    title: 'Marius Fabre 法鉑馬賽肥皂 – 家族故事',
+    channel: 'Marius Fabre 法鉑馬賽肥皂',
+    asrLang: 'fr',
+  });
+  assert.deepEqual(trackDecision(v, {}, []), { lang: 'fr', reason: 'asr' });
+});
+
+test('the veto still stops an English label on the same shape of title', () => {
+  const v = video({ title: 'Marius Fabre 法鉑馬賽肥皂 – 家族故事', asrLang: 'en' });
+  assert.equal(trackDecision(v, {}, []), null);
+});

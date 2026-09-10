@@ -127,33 +127,22 @@ function renderStatus() {
   const { overrides = {}, trackedChannels = [], currentSession } = tracking || {};
   const ov = overrides[video.videoId];
   const channelEntry = trackedChannels.find((c) => c.id === video.channelId);
-  const asr = asrLanguage(video);
-  const detected = asr === 'fr' || asr === 'en' ? asr : null;
-  // No captions at all yet (e.g. a video too new to be auto-captioned) — fall
-  // back to guessing from the title, same precedence as the background. A
-  // video captioned in some other language is not guessed at.
-  const titleGuess = asr === null ? guessLangFromTitle(video.title) : null;
 
-  // Effective language + status label (same precedence as the background).
-  let effLang = null;
-  let label;
-  if (ov === false) {
-    label = t('excluded');
-  } else if (ov === 'fr' || ov === 'en') {
-    effLang = ov;
-    label = t(ov === 'fr' ? 'trackedByOverrideFr' : 'trackedByOverrideEn');
-  } else if (channelEntry) {
-    effLang = channelEntry.lang;
-    label = t(channelEntry.lang === 'fr' ? 'trackedByChannelFr' : 'trackedByChannelEn');
-  } else if (detected) {
-    effLang = detected;
-    label = t(detected === 'fr' ? 'detectedFr' : 'detectedEn');
-  } else if (titleGuess) {
-    effLang = titleGuess;
-    label = t(titleGuess === 'fr' ? 'guessedTitleFr' : 'guessedTitleEn');
-  } else {
-    label = t('notDetected');
-  }
+  // Ask the same function the background asks, rather than restating the rules
+  // here. The popup used to keep its own copy of the chain, and once the two
+  // disagreed it announced "détecté comme français — suivi en cours" over a
+  // video the background had decided not to track at all.
+  const decision = trackDecision(video, overrides, trackedChannels);
+  const effLang = decision ? decision.lang : null;
+  const LABELS = {
+    override: { fr: 'trackedByOverrideFr', en: 'trackedByOverrideEn' },
+    channel: { fr: 'trackedByChannelFr', en: 'trackedByChannelEn' },
+    asr: { fr: 'detectedFr', en: 'detectedEn' },
+    title: { fr: 'guessedTitleFr', en: 'guessedTitleEn' },
+  };
+  const label = decision
+    ? t(LABELS[decision.reason][decision.lang])
+    : t(ov === false ? 'excluded' : 'notDetected');
 
   line.textContent = (effLang ? '🎧 ' : '') + label;
   line.className = 'status-line ' + (effLang ? 'on' : 'off');
