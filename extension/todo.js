@@ -60,8 +60,8 @@ const SECTIONS = [
     title: '⛵ Marseille',
     blurb: 'La plus vieille ville de France — 2 600 ans d’histoire.',
     items: [
-      { id: 'mars-eb', lang: 'fr', kind: '▶️', title: 'Échappées belles — « Marseille, la vie en bleu »',
-        desc: 'Documentaire complet France 5 (officiel).', url: 'https://www.youtube.com/watch?v=ksw7lp_rI7Y' },
+      { id: 'mars-eb', lang: 'fr', kind: '▶️', sec: 5328, title: 'Échappées belles — « Marseille, la vie en bleu »',
+        desc: 'Documentaire complet France 5 (officiel).', url: 'https://www.youtube.com/watch?v=Ccg9V__4mWg' },
       { id: 'mars-corbusier', lang: 'fr', kind: '▶️', title: 'La Cité Radieuse — Le Corbusier (UNESCO)',
         desc: 'Visite l’Unité d’Habitation avant de voir le béton en vrai.', url: yt('cité radieuse le corbusier marseille visite') },
       { id: 'mars-bouillabaisse', lang: 'fr', kind: '▶️', title: 'La bouillabaisse — histoire & vraie recette',
