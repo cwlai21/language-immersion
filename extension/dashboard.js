@@ -552,16 +552,15 @@ function sessionRow(rows) {
   mins.textContent = fields.durationText;
   if (fields.durationText.includes(' + ')) mins.title = `${fmtMinutes(fields.totalSeconds / 60)} total`;
 
-  if (rows.length === 1) {
-    const edit = document.createElement('button');
-    edit.className = 'session-del';
-    edit.textContent = '✏️';
-    edit.title = 'Edit';
-    edit.onclick = () => enterEditMode(li, s);
-    li.append(info, mins, edit);
-  } else {
-    li.append(info, mins);
-  }
+  // Editable whether or not the rows are merged. A title is what groups them,
+  // so a typo in one always produces a multi-row group — refusing to edit
+  // those made the one title you actually need to fix the one you couldn't.
+  const edit = document.createElement('button');
+  edit.className = 'session-del';
+  edit.textContent = '✏️';
+  edit.title = rows.length > 1 ? `Edit ${rows.length} sessions` : 'Edit';
+  edit.onclick = () => enterEditMode(li, rows);
+  li.append(info, mins, edit);
 
   const del = document.createElement('button');
   del.className = 'session-del';
@@ -603,7 +602,9 @@ function groupSameContent(sessions) {
   return [...byKey.values()];
 }
 
-function enterEditMode(li, s) {
+function enterEditMode(li, rows) {
+  const group = Array.isArray(rows) ? rows : [rows];
+  const s = group[0];
   li.innerHTML = '';
   li.className = 'session-item editing';
 
@@ -612,6 +613,9 @@ function enterEditMode(li, s) {
   title.value = s.title || '';
   title.placeholder = t('titleRequired');
 
+  // Minutes belong to one session, so they're only offered when the group is
+  // one session. Title and language identify the content and apply to all.
+  const single = group.length === 1;
   const mins = document.createElement('input');
   mins.type = 'number';
   mins.className = 'input small';
@@ -636,11 +640,13 @@ function enterEditMode(li, s) {
     if (!title.value.trim()) { title.focus(); return; } // title is mandatory
     save.disabled = true;
     try {
-      await sb.updateSession(s.id, {
-        title: title.value.trim(),
-        seconds: Math.max(60, parseInt(mins.value, 10) * 60 || s.seconds),
-        language: langSel.value,
-      });
+      for (const row of group) {
+        const patch = { title: title.value.trim(), language: langSel.value };
+        // Only a single session's length is on offer, so only it is written —
+        // a group must not have one row's minutes stamped onto all of them.
+        if (single) patch.seconds = Math.max(60, parseInt(mins.value, 10) * 60 || row.seconds);
+        await sb.updateSession(row.id, patch);
+      }
       await fetchSessions();
       // Saving an edit is a deliberate manual confirmation of this session —
       // same intent as startsDone() for a hand-typed series episode — so it
@@ -667,7 +673,17 @@ function enterEditMode(li, s) {
   cancel.textContent = t('cancel');
   cancel.onclick = () => render();
 
-  li.append(title, mins, langSel, save, cancel);
+  li.append(title);
+  if (single) {
+    li.append(mins);
+  } else {
+    // Say out loud how many rows the rename will touch.
+    const note = document.createElement('span');
+    note.className = 'session-meta';
+    note.textContent = t('editAllInGroup').replace('%n', group.length);
+    li.append(note);
+  }
+  li.append(langSel, save, cancel);
 }
 
 function renderSessionList() {
