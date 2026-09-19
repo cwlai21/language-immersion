@@ -6,6 +6,11 @@
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 
+// How far past TMDB's first hit to look for an actual series. Three is
+// enough for the real cases (a film and its making-of both outranking the
+// show) without turning one lookup into a burst of requests.
+const TMDB_CANDIDATES = 3;
+
 async function tmdbGetApiKey() {
   const { tmdbApiKey } = await chrome.storage.sync.get('tmdbApiKey');
   if (tmdbApiKey) return tmdbApiKey;
@@ -38,14 +43,44 @@ function tmdbSearchName(seriesName) {
   return seriesName.replace(/第[〇一二三四五六七八九十\d]+季/g, '').trim();
 }
 
-// Returns { id, poster, lang } (poster = full image URL or null, lang =
-// ISO 639-1 original language like 'en'/'fr'/'zh'), cached forever.
-async function tmdbFindShow(seriesName, apiKey) {
-  // "v4:" invalidates cache entries from before the original language was
-  // stored (and, further back, before errors stopped being cached as
-  // permanent misses) — storage.local survives extension reloads, so stale
-  // entries would otherwise stick around forever.
-  const cacheKey = `v4:show:${seriesName.toLowerCase()}`;
+// Accents, case and punctuation differ freely between what a streaming site
+// prints and what TMDB stores ("Les Misérables" / "les miserables"), and
+// none of it changes which show is meant.
+function tmdbTitleKey(title) {
+  return (title || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+// TMDB orders search hits by popularity, which is not the same as "the show
+// you meant": a film adaptation and its making-of both live under /tv too,
+// and either can outrank the series itself. Float a hit whose own title is
+// what was typed to the front, keeping TMDB's order among equals. Pure, so
+// the test suite can pin the ordering without the network.
+function tmdbRankShows(results, seriesName) {
+  const want = tmdbTitleKey(tmdbSearchName(seriesName));
+  return (results || [])
+    .map((hit, order) => ({
+      hit,
+      order,
+      exact: tmdbTitleKey(hit.name) === want || tmdbTitleKey(hit.original_name) === want,
+    }))
+    .sort((a, b) => (b.exact - a.exact) || (a.order - b.order))
+    .map(entry => ({ ...entry.hit, exact: entry.exact }));
+}
+
+// The top few candidates for a series name, best first. Each is
+// { id, poster, lang, exact } (poster = full image URL or null, lang =
+// ISO 639-1 original language like 'en'/'fr'/'zh', exact = carries the
+// title that was typed), cached forever.
+async function tmdbFindShows(seriesName, apiKey) {
+  // "v5:" invalidates cache entries from before candidates were ranked and
+  // kept as a list (and, further back, before the original language was
+  // stored, and before errors stopped being cached as permanent misses) —
+  // storage.local survives extension reloads, so stale entries would
+  // otherwise stick around forever.
+  const cacheKey = `v5:shows:${seriesName.toLowerCase()}`;
   const cached = await tmdbCacheGet(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -53,16 +88,64 @@ async function tmdbFindShow(seriesName, apiKey) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`TMDB search failed (${res.status})`);
   const data = await res.json();
-  const hit = data.results && data.results[0];
-  const info = hit
-    ? {
-        id: hit.id,
-        poster: hit.poster_path ? `https://image.tmdb.org/t/p/w92${hit.poster_path}` : null,
-        lang: hit.original_language || null,
-      }
-    : null;
-  await tmdbCacheSet(cacheKey, info);
-  return info;
+  const shows = tmdbRankShows(data.results, seriesName)
+    .slice(0, TMDB_CANDIDATES)
+    .map(hit => ({
+      id: hit.id,
+      poster: hit.poster_path ? `https://image.tmdb.org/t/p/w92${hit.poster_path}` : null,
+      lang: hit.original_language || null,
+      exact: hit.exact,
+    }));
+  await tmdbCacheSet(cacheKey, shows);
+  return shows;
+}
+
+// Show-level facts, cached forever. `episodes` is what tells a series apart
+// from a one-off: TMDB files films and specials under /tv as well, and they
+// carry exactly one episode.
+async function tmdbShowDetail(showId, apiKey) {
+  const cacheKey = `v1:show:${showId}`;
+  const cached = await tmdbCacheGet(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const res = await fetch(`${TMDB_BASE}/tv/${showId}?api_key=${encodeURIComponent(apiKey)}`);
+  if (!res.ok) throw new Error(`TMDB show lookup failed (${res.status})`);
+  const data = await res.json();
+  const detail = {
+    episodes: data.number_of_episodes || 0,
+    // The show's typical episode length, for episodes that carry no runtime
+    // of their own.
+    runtime: (data.episode_run_time && data.episode_run_time[0]) || null,
+  };
+  await tmdbCacheSet(cacheKey, detail);
+  return detail;
+}
+
+// Which candidates are still in the running, given one of them may carry
+// the exact title that was typed. Pure, for the test suite.
+function tmdbContenders(shows) {
+  const exact = (shows || []).filter(show => show.exact);
+  return exact.length ? exact : (shows || []);
+}
+
+// The candidate everything else should be about: the first one TMDB knows
+// as a real series. Without this a film sharing the show's name hands back
+// its own runtime for anything logged as S1E1 — a two-hour "episode" — and
+// its poster and language along with it.
+//
+// Once anything carries the exact title that was typed, only those compete:
+// a show with more episodes is never reason enough to answer with a
+// different name than the one asked about. And if nothing in the running
+// has more than one episode (a series one episode into its first season),
+// the best-ranked hit stands.
+async function tmdbFindShow(seriesName, apiKey) {
+  const shows = await tmdbFindShows(seriesName, apiKey);
+  const running = tmdbContenders(shows);
+  for (const show of running) {
+    const detail = await tmdbShowDetail(show.id, apiKey);
+    if (detail.episodes > 1) return show;
+  }
+  return running[0] || null;
 }
 
 // Original language of a series ('fr' | 'en' | other ISO code) or null.
@@ -114,10 +197,10 @@ async function tmdbEpisodeInfo(showId, season, episode, apiKey) {
   if (!minutes) {
     // Some episodes don't carry their own runtime — fall back to the show's
     // typical episode length.
-    const showRes = await fetch(`${TMDB_BASE}/tv/${showId}?api_key=${encodeURIComponent(apiKey)}`);
-    if (showRes.ok) {
-      const showData = await showRes.json();
-      minutes = (showData.episode_run_time && showData.episode_run_time[0]) || null;
+    try {
+      minutes = (await tmdbShowDetail(showId, apiKey)).runtime;
+    } catch {
+      minutes = null; // the episode title is still worth having
     }
   }
   // A confirmed-empty runtime (200 response, just no data yet) is still
@@ -138,4 +221,9 @@ async function tmdbLookupEpisode(seriesName, season, episode) {
   const showId = await tmdbFindShowId(seriesName.trim(), apiKey);
   if (!showId) return null;
   return await tmdbEpisodeInfo(showId, season, episode, apiKey);
+}
+
+// Dependency-free enough to require() the ranking into a Node test.
+if (typeof module !== 'undefined') {
+  module.exports = { tmdbSearchName, tmdbTitleKey, tmdbRankShows, tmdbContenders };
 }
