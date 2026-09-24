@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
@@ -30,6 +30,12 @@ ROLLOVER_HOUR = 4           # tracker day starts at 4am, like Anki
 LOOKBACK_DAYS = 3
 MIN_SECONDS = 30
 MAX_STATE_EPISODES = 1000
+# The library only receives phone listening while Podcasts.app actually syncs,
+# and when it stops there is nothing to notice: every run still says "0 rows".
+# It stayed that way for five weeks once. Speak up when the whole library has
+# had no playback for this long — at worst it is a nudge on a quiet week.
+STALE_DAYS = 4
+STALE_ALERT_INTERVAL = 86400  # at most one alert a day
 
 
 def log(msg):
@@ -88,6 +94,50 @@ def feed_language(state, show_title, feed_url):
         return None  # not cached — retried next run
 
 
+def iso_utc(unix_ts):
+    return datetime.fromtimestamp(unix_ts, tz=timezone.utc).isoformat()
+
+
+def notify(text):
+    """A log line nobody reads is how this went unnoticed for five weeks."""
+    subprocess.run([
+        "osascript", "-e",
+        f'display notification "{text}" with title "Écoute — Apple Podcasts"',
+    ], capture_output=True)
+
+
+def library_last_playback():
+    """Newest moment the library saw any episode played or its playhead saved,
+    on any device. Frozen means the app is not syncing, whatever it reports."""
+    con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    # Two-argument max() is scalar in SQLite, so the aggregate runs outside it.
+    newest = con.execute(
+        "select max(newest) from ("
+        "  select max(coalesce(ZLASTDATEPLAYED, 0), coalesce(ZLASTBOOKMARKEDDATE, 0))"
+        "  as newest from ZMTEPISODE)"
+    ).fetchone()[0]
+    con.close()
+    return (newest + COREDATA_EPOCH) if newest else None
+
+
+def check_library_freshness(state, now, inserted):
+    if inserted:
+        state.pop("stale_alerted", None)
+        return
+    newest = library_last_playback()
+    quiet_days = (now - newest) / 86400 if newest else None
+    if quiet_days is None or quiet_days < STALE_DAYS:
+        return
+    log(f"WARNING: no playback in the library for {quiet_days:.1f} days "
+        f"(newest: {datetime.fromtimestamp(newest):%Y-%m-%d %H:%M}) — "
+        f"open Podcasts.app so it syncs the phone\u2019s play state")
+    if now - state.get("stale_alerted", 0) < STALE_ALERT_INTERVAL:
+        return
+    notify(f"No podcast play data for {int(quiet_days)} days. "
+           f"Open Podcasts on this Mac to let it sync.")
+    state["stale_alerted"] = now
+
+
 def logical_date(unix_ts):
     return (datetime.fromtimestamp(unix_ts) - timedelta(hours=ROLLOVER_HOUR)).strftime("%Y-%m-%d")
 
@@ -101,11 +151,11 @@ def recent_episodes():
         select e.ZUUID, e.ZPLAYHEAD, e.ZDURATION,
                coalesce(e.ZLASTDATEPLAYED, e.ZPLAYSTATELASTMODIFIEDDATE) + ?,
                e.ZTITLE, p.ZTITLE, coalesce(p.ZUPDATEDFEEDURL, p.ZFEEDURL),
-               e.ZPLAYSTATE
+               e.ZPLAYSTATE, e.ZLASTDATEPLAYED + ?
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where e.ZLASTDATEPLAYED > ? or e.ZPLAYSTATELASTMODIFIEDDATE > ?
         """,
-        (COREDATA_EPOCH, since_cd, since_cd),
+        (COREDATA_EPOCH, since_cd, since_cd, COREDATA_EPOCH),
     ).fetchall()
     con.close()
     return rows
@@ -147,7 +197,8 @@ def main():
     def entry_since(entry):
         return entry.get("since") if isinstance(entry, dict) else None
 
-    for uuid, playhead, duration, played_ts, ep_title, show_title, feed_url, playstate in recent_episodes():
+    for (uuid, playhead, duration, played_ts, ep_title, show_title, feed_url,
+         playstate, last_played_ts) in recent_episodes():
         seen.add(uuid)
         playhead = playhead or 0
 
@@ -201,6 +252,13 @@ def main():
 
         row = {
             "date": logical_date(played_ts or now),
+            # When the listening happened, not when this run noticed it. The
+            # phone's play time only reaches the Mac when the library finally
+            # syncs — hours later, or not until Podcasts.app is opened — and
+            # the dashboard reads created_at as the end of the session, so
+            # without this a lunchtime episode is drawn at whatever o'clock
+            # the sync landed.
+            "created_at": iso_utc(last_played_ts or now),
             "seconds": int(capped),
             "language": lang,
             "type": "podcast",
@@ -229,6 +287,8 @@ def main():
     if len(episodes) > MAX_STATE_EPISODES:
         for key in [k for k in episodes if k not in seen][: len(episodes) - MAX_STATE_EPISODES]:
             del episodes[key]
+
+    check_library_freshness(state, now, inserted)
 
     state["last_run"] = now
     STATE_DIR.mkdir(parents=True, exist_ok=True)
