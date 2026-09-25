@@ -275,6 +275,10 @@ async function finalizeCurrent() {
   const { currentSession } = await chrome.storage.local.get('currentSession');
   if (currentSession) await finalizeSession(currentSession);
   await chrome.storage.local.set({ currentSession: null });
+  // Navigating off a video ends a shorts binge just as surely as it ends a
+  // session. Without this the pool waits out the 90s idle tick, which is
+  // 90 seconds of having watched something and seeing nothing for it.
+  await flushShortsBuffer();
   await clearBadgeUnlessActive();
   return { ok: true };
 }
@@ -819,11 +823,17 @@ async function syncPending() {
 // shows that tab's session time even while a different series tab is
 // also open and counting independently.
 async function getTrackingStatus(tabId) {
-  const { currentSession = null, seriesByTab = {}, overrides = {}, trackedChannels = [], pendingRows = [] } =
-    await chrome.storage.local.get(['currentSession', 'seriesByTab', 'overrides', 'trackedChannels', 'pendingRows']);
+  const { currentSession = null, seriesByTab = {}, overrides = {}, trackedChannels = [],
+          pendingRows = [], shortsBuffer = {} } =
+    await chrome.storage.local.get(['currentSession', 'seriesByTab', 'overrides', 'trackedChannels',
+                                    'pendingRows', 'shortsBuffer']);
   const currentSeries = tabId != null ? (seriesByTab[tabId] || null) : null;
   const { seriesLangs = {} } = await chrome.storage.sync.get('seriesLangs');
-  return { currentSession, currentSeries, overrides, trackedChannels, seriesLangs, pendingCount: pendingRows.length };
+  // shortsBuffer rides along so the popup can show time that is counted but
+  // not yet written: a shorts binge is invisible in Supabase until it ends,
+  // and "counted, waiting" looked exactly like "not counting at all".
+  return { currentSession, currentSeries, overrides, trackedChannels, seriesLangs, shortsBuffer,
+           pendingCount: pendingRows.length };
 }
 
 // value: 'fr' | 'en' (track as that language) | false (never track)

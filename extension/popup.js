@@ -15,7 +15,7 @@ function fmtMinutes(mins) {
 
 let pageStatus = null;   // { video, playing } from the content script
 let seriesStatus = null; // { meta, playing } from series-detect.js on streaming sites
-let tracking = null;     // { currentSession, currentSeries, overrides, trackedChannels, seriesLangs, pendingCount }
+let tracking = null;     // { currentSession, currentSeries, overrides, trackedChannels, seriesLangs, shortsBuffer, pendingCount }
 let statsLang = 'fr';    // which language the quick stats show
 let statsRows = null;    // cached rows for the current stats window
 
@@ -150,6 +150,12 @@ function renderStatus() {
 
   if (currentSession && currentSession.videoId === video.videoId) {
     sess.textContent = `${fmtMinutes(currentSession.seconds / 60)} ${t('thisSession')}`;
+  } else if (video.isShort && effLang) {
+    // Shorts never get a session of their own — they feed a per-day pool that
+    // only reaches Supabase once the scrolling stops. Say so, rather than
+    // leaving a tracked Short looking like it counts for nothing.
+    const pooled = pooledShortsSeconds(effLang);
+    sess.textContent = pooled ? `${fmtMinutes(pooled / 60)} ${t('shortsPooled')}` : '';
   } else {
     sess.textContent = '';
   }
@@ -181,6 +187,13 @@ function renderStatus() {
     actions.appendChild(makeBtn(t('trackAsEn'), setOverride('en'), true));
   }
   actions.hidden = false;
+}
+
+// Shorts time already counted for today but not yet written as a row.
+function pooledShortsSeconds(lang) {
+  const buf = (tracking && tracking.shortsBuffer) || {};
+  if (buf.date !== todayKey()) return 0;   // yesterday's pool, or none at all
+  return buf[lang] || 0;
 }
 
 /* ── Quick stats from Supabase ────────────── */
@@ -221,6 +234,12 @@ async function renderStats() {
       (tracking.seriesLangs || {})[liveSeries.name] === statsLang) {
     sessions.push({ date: liveSeries.date, seconds: liveSeries.seconds });
   }
+
+  // Same treatment as the live session above: pooled shorts are counted, just
+  // not written yet, and the pool resets as it flushes — so adding it here
+  // cannot double-count against the row it becomes.
+  const pooled = pooledShortsSeconds(statsLang);
+  if (pooled) sessions.push({ date: tk, seconds: pooled });
 
   const stats = computeStats(sessions);
   document.getElementById('qsToday').textContent = fmtMinutes(stats.today);
