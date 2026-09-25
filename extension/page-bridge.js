@@ -58,22 +58,24 @@
       (pr.captions &&
         pr.captions.playerCaptionsTracklistRenderer &&
         pr.captions.playerCaptionsTracklistRenderer.captionTracks) || [];
-    // ASR (auto-generated) captions are always in the spoken language —
-    // the strongest signal for what language the audio actually is.
-    const asr = tracks.find((t) => t.kind === 'asr');
+    // Auto-generated captions are in the spoken language — the strongest
+    // signal for what the audio actually is. Which of them is the spoken one
+    // takes reading, now that YouTube generates a score of them per video:
+    // see caption-rules.js, injected into this world just before us.
+    const asrLang = spokenCaptionLanguage(pr);
 
     const info = {
       videoId: details.videoId,
       title: details.title || '',
       channel: details.author || '',
       channelId: details.channelId || '',
-      asrLang: asr ? asr.languageCode : null,
+      asrLang,
       captionLangs: tracks.filter((t) => t.kind !== 'asr').map((t) => t.languageCode),
       isShort: location.pathname.startsWith('/shorts/'),
     };
     window.dispatchEvent(new CustomEvent('ecoute-videoinfo', { detail: JSON.stringify(info) }));
 
-    if (asr) return; // resolved — nothing left to poll for
+    if (asrLang) return; // resolved — nothing left to poll for
 
     // The caption list can load after the rest of the player response, or
     // not exist yet at all for a brand-new upload. Re-announce when it

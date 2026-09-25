@@ -57,7 +57,7 @@
     },
     {
       "matches": ["https://www.youtube.com/*"],
-      "js": ["page-bridge.js"],
+      "js": ["caption-rules.js", "page-bridge.js"],
       "run_at": "document_idle",
       "world": "MAIN"
     },
