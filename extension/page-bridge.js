@@ -62,7 +62,16 @@
     // signal for what the audio actually is. Which of them is the spoken one
     // takes reading, now that YouTube generates a score of them per video:
     // see caption-rules.js, injected into this world just before us.
-    const asrLang = spokenCaptionLanguage(pr);
+    //
+    // If it somehow isn't there, fall back to the old "first asr track" rule
+    // rather than throwing: a wrong language on a multi-caption video is bad,
+    // but a bridge that dies here announces no video at all and every page
+    // silently stops being tracked. That is exactly what one half-updated
+    // injection path did.
+    const asrLang =
+      typeof spokenCaptionLanguage === 'function'
+        ? spokenCaptionLanguage(pr)
+        : ((tracks.find((t) => t.kind === 'asr') || {}).languageCode || null);
 
     const info = {
       videoId: details.videoId,

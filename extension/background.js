@@ -99,7 +99,12 @@ async function healYouTubeTab(tabId) {
     // safe even when an orphaned instance is still around — no stacked
     // timers or listeners, no fragmented/duplicated sessions.
     await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['page-bridge.js'], world: 'MAIN' });
+    // Same pair, in the same order, as the manifest's MAIN-world entry: the
+    // bridge reads caption-rules.js for the spoken language, and re-injecting
+    // it alone left the fresh copy calling a function that wasn't there.
+    await chrome.scripting.executeScript({
+      target: { tabId }, files: ['caption-rules.js', 'page-bridge.js'], world: 'MAIN',
+    });
   } catch { /* tab not injectable (discarded, error page, …) */ }
 }
 
