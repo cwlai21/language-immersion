@@ -693,18 +693,15 @@ function renderSessionList() {
   const cutoffKey = dateKey(startOfWeek(logicalNow()));
   const recent = filteredSessions().filter((s) => s.date >= cutoffKey);
 
-  // Unfinished content stays on the list past the window until checked off.
-  const inWindow = new Set(recent.map((s) => s.id));
-  const pinned = filteredSessions().filter(
-    (s) => !inWindow.has(s.id) && watchState[watchKey(s)] === 'todo'
-  );
-  const shown = recent.concat(pinned);
-  empty.style.display = shown.length ? 'none' : 'block';
-
-  // Default-assignment and pruning rules live in rules.js (and are covered
-  // by the Node test suite) — this just applies them to the current state.
-  // Migration first: pruneDeadKeys would read a state still keyed by title as
-  // entirely dead and throw away every tick in it.
+  // Bring the state up to date *before* anything reads it. Default-assignment
+  // and pruning rules live in rules.js (and are covered by the Node test
+  // suite); migration runs first, because pruneDeadKeys would read a state
+  // still keyed by title as entirely dead and throw away every tick in it.
+  //
+  // Order matters to the list below, not just to the state: pinning asks what
+  // watchKey(s) is marked as, so a render that pinned before migrating looked
+  // up id keys in a state that still had title keys, found nothing, and
+  // dropped every older unfinished item off the list until the next reload.
   const migrated = migrateWatchKeys(watchState, allSessions);
   const assigned = assignDefaultStates(migrated.state, recent);
   const pruned = pruneDeadKeys(assigned.state, allSessions);
@@ -719,6 +716,14 @@ function renderSessionList() {
       return p.state;
     });
   }
+
+  // Unfinished content stays on the list past the window until checked off.
+  const inWindow = new Set(recent.map((s) => s.id));
+  const pinned = filteredSessions().filter(
+    (s) => !inWindow.has(s.id) && watchState[watchKey(s)] === 'todo'
+  );
+  const shown = recent.concat(pinned);
+  empty.style.display = shown.length ? 'none' : 'block';
 
   // Language sections, then collapsible per-source groups inside each.
   const langs = langFilter === 'all' ? ['fr', 'en'] : [langFilter];
