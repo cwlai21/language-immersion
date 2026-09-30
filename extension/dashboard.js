@@ -52,10 +52,37 @@ function goalStatus(stats) {
 }
 
 /* ── Data ─────────────────────────────────── */
-async function fetchSessions() {
-  allSessions = await sb.listSessions(
-    'select=id,date,seconds,language,type,title,channel,source,season,episode,video_id,created_at&order=date.desc,created_at.desc'
+const SESSION_COLS =
+  'select=id,date,seconds,language,type,title,channel,source,season,episode,video_id,created_at';
+
+// The whole table is 57 kB gzipped, and re-pulling it every minute from a tab
+// left open all day was ~94 MB — enough on its own to run the free plan's 5 GB
+// of egress out before the month did. Most ticks have nothing new to say, so
+// ask only for rows written since the newest one we hold: usually an empty
+// array, a few hundred bytes.
+async function fetchSessions({ since } = {}) {
+  if (!since) {
+    allSessions = await sb.listSessions(`${SESSION_COLS}&order=date.desc,created_at.desc`);
+    return;
+  }
+  const fresh = await sb.listSessions(
+    `${SESSION_COLS}&created_at=gt.${encodeURIComponent(since)}&order=created_at.desc`
   );
+  if (!fresh.length) return;
+  const byId = new Map(allSessions.map((s) => [s.id, s]));
+  for (const row of fresh) byId.set(row.id, row);
+  allSessions = [...byId.values()].sort(
+    (a, b) => (b.date.localeCompare(a.date)) || (b.created_at || '').localeCompare(a.created_at || '')
+  );
+}
+
+// An incremental poll cannot see an edit or a deletion made on the other
+// dashboard copy — those rewrite a row in place, or remove one, without
+// producing a newer created_at. A periodic full pull is what catches up.
+function newestCreatedAt() {
+  let newest = '';
+  for (const s of allSessions) if ((s.created_at || '') > newest) newest = s.created_at;
+  return newest;
 }
 
 async function removeSession(id) {
@@ -72,10 +99,22 @@ async function removeSession(id) {
 const WATCH_KEY = 'watch-todo';
 let watchState = {};
 
-async function loadWatchState() {
+let watchStateStamp = '';
+
+// The state blob is 8 kB and changes only when something is ticked, so a poll
+// asks for its timestamp first — a couple of hundred bytes — and pulls the
+// value only when that has moved.
+async function loadWatchState({ ifChanged = false } = {}) {
   try {
-    const rows = await sbRequest(`kv_state?key=eq.${WATCH_KEY}&select=value`);
-    if (rows.length) watchState = JSON.parse(rows[0].value);
+    if (ifChanged) {
+      const [stamp] = await sbRequest(`kv_state?key=eq.${WATCH_KEY}&select=updated_at`);
+      if (stamp && stamp.updated_at === watchStateStamp) return;
+    }
+    const rows = await sbRequest(`kv_state?key=eq.${WATCH_KEY}&select=value,updated_at`);
+    if (rows.length) {
+      watchState = JSON.parse(rows[0].value);
+      watchStateStamp = rows[0].updated_at || '';
+    }
   } catch {
     try { watchState = JSON.parse(localStorage.getItem(WATCH_KEY)) || {}; } catch { watchState = {}; }
   }
@@ -879,10 +918,29 @@ document.querySelectorAll('[data-langfilter]').forEach((pill) => {
   // Pick up freshly auto-tracked sessions, and checkbox/goal changes made
   // from the other dashboard copy (extension vs. GitHub Pages), while the
   // tab stays open.
-  setInterval(async () => {
+  //
+  // A tab nobody is looking at is not worth a single byte: this dashboard
+  // lives in a pinned tab for days, and polling it around the clock was most
+  // of the project's egress. Hidden tabs sit the tick out and catch up the
+  // moment they are looked at again.
+  const FULL_REFRESH_MS = 15 * 60 * 1000;
+  let lastFullRefresh = Date.now();
+
+  async function refresh({ full = false } = {}) {
+    const wantFull = full || Date.now() - lastFullRefresh > FULL_REFRESH_MS;
     try {
-      await Promise.all([fetchSessions(), loadWatchState()]);
+      await Promise.all([
+        fetchSessions(wantFull ? {} : { since: newestCreatedAt() }),
+        loadWatchState({ ifChanged: !wantFull }),
+      ]);
+      if (wantFull) lastFullRefresh = Date.now();
       render();
     } catch { /* transient network error — keep showing stale data */ }
-  }, 60000);
+  }
+
+  setInterval(() => { if (!document.hidden) refresh(); }, 60000);
+  document.addEventListener('visibilitychange', () => {
+    // Back in view after who knows how long — start from a complete picture.
+    if (!document.hidden) refresh({ full: true });
+  });
 })();
