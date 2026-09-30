@@ -125,10 +125,52 @@ const normType = (s) => (KNOWN_TYPES.includes(s.type) ? s.type : 'youtube');
 // instead of getting a todo entry.
 const TODO_TYPES = ['youtube', 'podcast', 'reading', 'series'];
 
+// What a row is *about*, for grouping its sittings into one item and for
+// remembering whether that item is watched. A video id is the thing itself;
+// a title is only what it was called at the time. Finary renamed "Le seul
+// cours d'économie dont vous aurez besoin (99 % ne l'ont jamais eu)" to drop
+// its parenthesis mid-way through being watched, and the same 28 minutes
+// split into two dashboard entries with two checkboxes. Podcasts, books and
+// series episodes have no id, so they keep the title.
 function watchKey(s) {
+  if (!TODO_TYPES.includes(normType(s))) return null;
+  if (s.video_id) return `${sessionLang(s)}|${normType(s)}|v:${s.video_id}`;
+  return legacyWatchKey(s);
+}
+
+// The title-based key exactly as it was before ids were used. Stored watch
+// states are keyed by whatever watchKey returned when they were written, so
+// this is how migrateWatchKeys finds them.
+function legacyWatchKey(s) {
   if (!s.title || !TODO_TYPES.includes(normType(s))) return null;
   const ep = s.type === 'series' && s.season && s.episode ? `S${s.season}E${s.episode}` : '';
   return `${sessionLang(s)}|${normType(s)}|${s.title}|${s.channel || ''}|${ep}`;
+}
+
+// One-time rewrite of stored watch-todo state onto the new keys. Without it,
+// every ticked video would look like an unknown key — pruned as dead, and its
+// content re-offered as unwatched. Runs on every load and is a no-op once
+// there is nothing left in the old shape.
+//
+// 'done' wins a collision: a rename can leave two stored keys for one video
+// (the old title and the new), and having watched it is the fact that
+// matters — re-offering something already finished is the worse mistake.
+function migrateWatchKeys(watchState, allSessions) {
+  const rename = new Map();
+  for (const s of allSessions || []) {
+    const now = watchKey(s);
+    const was = legacyWatchKey(s);
+    if (now && was && now !== was) rename.set(was, now);
+  }
+  const state = {};
+  let changed = false;
+  for (const [key, value] of Object.entries(watchState || {})) {
+    const target = rename.get(key);
+    if (!target) { state[key] = state[key] || value; continue; }
+    changed = true;
+    state[target] = state[target] === 'done' || value === 'done' ? 'done' : value;
+  }
+  return { state, changed };
 }
 
 // The distinct watch-todo keys a set of session rows belongs to. One video can
@@ -211,7 +253,13 @@ function doneItemIds(items, rows, watchlist, watchTodo) {
       ...videoIds.flatMap((v) => byVideo.get(v) || []),
       ...shows.flatMap((sh) => byShow.get(sh) || []),
     ];
-    const keys = sessionWatchKeys(matched);
+    // Both spellings of the key count: the dashboard rewrites stored state
+    // onto ids when it next loads (migrateWatchKeys), and until it does, a
+    // tick written under the old title key is still a tick.
+    const keys = [
+      ...sessionWatchKeys(matched),
+      ...matched.map(legacyWatchKey).filter(Boolean),
+    ];
     if (keys.some((k) => (watchTodo || {})[k] === 'done')) done.add(item.id);
   }
   return done;
@@ -347,7 +395,8 @@ if (typeof module !== 'undefined') {
   module.exports = {
     pad, dateKey, ROLLOVER_HOUR, logicalNow, todayKey, startOfWeek,
     minutesByDate, computeStats,
-    sessionLang, KNOWN_TYPES, normType, TODO_TYPES, watchKey, sessionWatchKeys, startsDone,
+    sessionLang, KNOWN_TYPES, normType, TODO_TYPES, watchKey, legacyWatchKey, migrateWatchKeys,
+    sessionWatchKeys, startsDone,
     videoIdFromUrl, normShow, contentLinks, doneItemIds,
     withDoneAt, compareWatchlist, doneAtLabel,
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,

@@ -703,14 +703,18 @@ function renderSessionList() {
 
   // Default-assignment and pruning rules live in rules.js (and are covered
   // by the Node test suite) — this just applies them to the current state.
-  const assigned = assignDefaultStates(watchState, recent);
+  // Migration first: pruneDeadKeys would read a state still keyed by title as
+  // entirely dead and throw away every tick in it.
+  const migrated = migrateWatchKeys(watchState, allSessions);
+  const assigned = assignDefaultStates(migrated.state, recent);
   const pruned = pruneDeadKeys(assigned.state, allSessions);
   watchState = pruned.state;
-  if (assigned.changed || pruned.changed) {
+  if (migrated.changed || assigned.changed || pruned.changed) {
     // Re-derive against whatever's on the server at save time, not this
     // tab's possibly-stale copy — same reasoning as the two calls above.
     saveWatchState((latest) => {
-      const a = assignDefaultStates(latest, recent);
+      const m = migrateWatchKeys(latest, allSessions);
+      const a = assignDefaultStates(m.state, recent);
       const p = pruneDeadKeys(a.state, allSessions);
       return p.state;
     });

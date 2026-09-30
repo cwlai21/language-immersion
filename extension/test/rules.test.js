@@ -13,6 +13,8 @@ const {
   withDoneAt, compareWatchlist, doneAtLabel,
   assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
   streakThreshold, goalStreak,
+  legacyWatchKey,
+  migrateWatchKeys,
 } = require('../rules.js');
 
 const min = (m) => m * 60; // minutes -> seconds, for session fixtures
@@ -401,8 +403,15 @@ test('doneItemIds ticks an item whose video À regarder has ticked', () => {
 test('doneItemIds ticks an item whose session the dashboard has ticked', () => {
   const items = [{ id: 'lyon-eb', url: 'https://www.youtube.com/watch?v=V1' }];
   const rows = [{ video_id: 'V1', type: 'youtube', title: 'Lyon', channel: 'France 5', language: 'fr' }];
-  const watchTodo = { 'fr|youtube|Lyon|France 5|': 'done' };
-  assert.deepEqual([...doneItemIds(items, rows, {}, watchTodo)], ['lyon-eb']);
+  assert.deepEqual([...doneItemIds(items, rows, {}, { 'fr|youtube|v:V1': 'done' })], ['lyon-eb']);
+});
+
+test('a tick stored under the old title key still counts, before any migration', () => {
+  // Every surface reads this state, and only the dashboard rewrites it — so
+  // until it next loads, the trip list must not re-offer a finished video.
+  const items = [{ id: 'lyon-eb', url: 'https://www.youtube.com/watch?v=V1' }];
+  const rows = [{ video_id: 'V1', type: 'youtube', title: 'Lyon', channel: 'France 5', language: 'fr' }];
+  assert.deepEqual([...doneItemIds(items, rows, {}, { 'fr|youtube|Lyon|France 5|': 'done' })], ['lyon-eb']);
 });
 
 test('doneItemIds leaves an item whose session is still todo', () => {
@@ -523,4 +532,78 @@ test('doneAtLabel dates a daytime finish by its own date', () => {
 test('doneAtLabel says nothing without a stamp', () => {
   assert.equal(doneAtLabel(0), '');
   assert.equal(doneAtLabel(undefined), '');
+});
+
+/* ── Identity by video id, and the migration onto it ── */
+// Finary renamed "Le seul cours d'économie dont vous aurez besoin (99 % ne
+// l'ont jamais eu)" mid-way through it being watched, and the same 28 minutes
+// became two dashboard entries with two checkboxes.
+const ECON_OLD = "Le seul cours d'économie dont vous aurez besoin (99 % ne l'ont jamais eu)";
+const ECON_NEW = "Le seul cours d'économie dont vous aurez besoin";
+const econ = (title, date) => ({
+  type: 'youtube', language: 'fr', channel: 'Finary', video_id: 'dAenp-6u9xU', title, date,
+});
+
+test('a renamed video keeps one key, because the id did not change', () => {
+  assert.equal(watchKey(econ(ECON_OLD, '2026-08-25')), watchKey(econ(ECON_NEW, '2026-09-27')));
+  assert.match(watchKey(econ(ECON_NEW, '2026-09-27')), /\|v:dAenp-6u9xU$/);
+});
+
+test('two genuinely different videos still differ, and language still splits them', () => {
+  assert.notEqual(watchKey(econ(ECON_NEW, '2026-09-27')),
+                  watchKey({ ...econ(ECON_NEW, '2026-09-27'), video_id: 'other123456' }));
+  assert.notEqual(watchKey(econ(ECON_NEW, '2026-09-27')),
+                  watchKey({ ...econ(ECON_NEW, '2026-09-27'), language: 'en' }));
+});
+
+test('content with no id keeps the title key — podcasts, books, episodes', () => {
+  const pod = { type: 'podcast', language: 'fr', channel: 'InnerFrench', title: 'E42', video_id: '' };
+  assert.equal(watchKey(pod), legacyWatchKey(pod));
+  const ep = { type: 'series', language: 'fr', channel: 'Lupin', title: 'Chapitre 3', season: 1, episode: 3 };
+  assert.equal(watchKey(ep), legacyWatchKey(ep));
+  assert.match(watchKey(ep), /S1E3$/);
+  assert.equal(watchKey({ type: 'youtube', title: '', video_id: '' }), null);
+  assert.equal(watchKey({ type: 'anki', title: 'Anki reviews', video_id: '' }), null);
+});
+
+test('migration moves a stored tick from the title key onto the id key', () => {
+  const sessions = [econ(ECON_OLD, '2026-08-25'), econ(ECON_NEW, '2026-09-27')];
+  const before = { [legacyWatchKey(econ(ECON_OLD, '2026-08-25'))]: 'done' };
+  const { state, changed } = migrateWatchKeys(before, sessions);
+  assert.equal(changed, true);
+  assert.deepEqual(state, { [watchKey(econ(ECON_NEW, '2026-09-27'))]: 'done' });
+});
+
+test('a rename that left two stored keys collapses to one, and done wins', () => {
+  const sessions = [econ(ECON_OLD, '2026-08-25'), econ(ECON_NEW, '2026-09-27')];
+  const both = {
+    [legacyWatchKey(econ(ECON_OLD, '2026-08-25'))]: 'done',
+    [legacyWatchKey(econ(ECON_NEW, '2026-09-27'))]: 'todo',
+  };
+  const { state } = migrateWatchKeys(both, sessions);
+  assert.deepEqual(state, { [watchKey(econ(ECON_NEW, '2026-09-27'))]: 'done' });
+});
+
+test('migration leaves keys it does not recognise alone, and is a no-op once done', () => {
+  const sessions = [econ(ECON_NEW, '2026-09-27')];
+  const already = { [watchKey(econ(ECON_NEW, '2026-09-27'))]: 'todo', 'fr|podcast|E42|InnerFrench|': 'done' };
+  const { state, changed } = migrateWatchKeys(already, sessions);
+  assert.equal(changed, false);
+  assert.deepEqual(state, already);
+});
+
+test('a migrated tick survives the prune that follows it', () => {
+  // The regression this guards: pruneDeadKeys sees a title-keyed state as
+  // entirely dead and throws away every tick in it.
+  const sessions = [econ(ECON_OLD, '2026-08-25'), econ(ECON_NEW, '2026-09-27')];
+  const stored = { [legacyWatchKey(econ(ECON_OLD, '2026-08-25'))]: 'done' };
+  const migrated = migrateWatchKeys(stored, sessions);
+  const pruned = pruneDeadKeys(migrated.state, sessions);
+  assert.deepEqual(pruned.state, { [watchKey(econ(ECON_NEW, '2026-09-27'))]: 'done' });
+  assert.equal(pruneDeadKeys(stored, sessions).state[Object.keys(stored)[0]], undefined);
+});
+
+test('grouping puts a renamed video back into a single row', () => {
+  const rows = [econ(ECON_OLD, '2026-08-25'), econ(ECON_NEW, '2026-09-27')].map((r, i) => ({ ...r, id: `r${i}`, seconds: 300 }));
+  assert.equal(sessionWatchKeys(rows).length, 1);
 });
