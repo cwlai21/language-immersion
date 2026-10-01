@@ -88,6 +88,15 @@ function newestCreatedAt() {
 async function removeSession(id) {
   await sb.deleteSession(id);
   await fetchSessions();
+  // The one moment a key genuinely dies. Pruning used to run on every load
+  // instead, which made it destructive on a partial or differently-keyed
+  // view: a dashboard copy on older code read every key the newer one had
+  // written as unrecognised and deleted 204 of them, ticks and all. A key
+  // whose content is gone costs a few bytes; a tick that is gone costs the
+  // record of having watched something.
+  const pruned = pruneDeadKeys(watchState, allSessions);
+  watchState = pruned.state;
+  if (pruned.changed) saveWatchState((latest) => pruneDeadKeys(latest, allSessions).state);
   render();
 }
 
@@ -732,10 +741,10 @@ function renderSessionList() {
   const cutoffKey = dateKey(startOfWeek(logicalNow()));
   const recent = filteredSessions().filter((s) => s.date >= cutoffKey);
 
-  // Bring the state up to date *before* anything reads it. Default-assignment
-  // and pruning rules live in rules.js (and are covered by the Node test
-  // suite); migration runs first, because pruneDeadKeys would read a state
-  // still keyed by title as entirely dead and throw away every tick in it.
+  // Bring the state up to date *before* anything reads it. These rules live
+  // in rules.js and are covered by the Node test suite. Nothing here deletes:
+  // pruning happens only where a session is actually deleted (removeSession),
+  // because a load that prunes throws away whatever it fails to recognise.
   //
   // Order matters to the list below, not just to the state: pinning asks what
   // watchKey(s) is marked as, so a render that pinned before migrating looked
@@ -743,16 +752,14 @@ function renderSessionList() {
   // dropped every older unfinished item off the list until the next reload.
   const migrated = migrateWatchKeys(watchState, allSessions);
   const assigned = assignDefaultStates(migrated.state, recent);
-  const pruned = pruneDeadKeys(assigned.state, allSessions);
-  watchState = pruned.state;
-  if (migrated.changed || assigned.changed || pruned.changed) {
+  watchState = assigned.state;
+  if (migrated.changed || assigned.changed) {
     // Re-derive against whatever's on the server at save time, not this
     // tab's possibly-stale copy — same reasoning as the two calls above.
     saveWatchState((latest) => {
       const m = migrateWatchKeys(latest, allSessions);
       const a = assignDefaultStates(m.state, recent);
-      const p = pruneDeadKeys(a.state, allSessions);
-      return p.state;
+      return a.state;
     });
   }
 

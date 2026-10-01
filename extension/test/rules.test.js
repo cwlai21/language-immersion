@@ -607,3 +607,15 @@ test('grouping puts a renamed video back into a single row', () => {
   const rows = [econ(ECON_OLD, '2026-08-25'), econ(ECON_NEW, '2026-09-27')].map((r, i) => ({ ...r, id: `r${i}`, seconds: 300 }));
   assert.equal(sessionWatchKeys(rows).length, 1);
 });
+
+test('pruning is safe to run on a view that only knows some of the keys', () => {
+  // It is still destructive by nature — this pins what it does so the caller
+  // can be judged, since the caller is what went wrong: pruning on every load
+  // let a dashboard copy on older code delete 204 ticks it did not recognise.
+  const mine = { type: 'youtube', language: 'fr', title: 'A', channel: 'C', video_id: 'V1' };
+  const state = { [watchKey(mine)]: 'done', 'some|other|clients|key|': 'done' };
+  assert.deepEqual(pruneDeadKeys(state, [mine]).state, { [watchKey(mine)]: 'done' });
+  // ...and with no sessions in view at all, it empties the lot. Which is why
+  // it may only run where a deletion just happened, never on a load.
+  assert.deepEqual(pruneDeadKeys(state, []).state, {});
+});
