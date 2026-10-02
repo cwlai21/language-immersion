@@ -515,6 +515,7 @@ const YT_TODO_KV = 'video-todo';
 // Listing the playlist is 1 quota unit (of 10,000/day), so polling often is
 // cheap; the 'tick' alarm fires every minute, which is the effective floor.
 const YT_TODO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const YT_DURATION_BACKFILL_INTERVAL_MS = 60 * 60 * 1000;
 let ytTodoSyncing = false;
 
 function ytPlaylistIdFromUrl(url) {
@@ -705,7 +706,12 @@ async function syncYoutubeTodo(interactive = false) {
       }
     };
 
-    const current = await ytTodoLoad();
+    // Loaded on demand, not on principle: the usual tick finds an empty
+    // playlist and has no reason to read the list at all. This is a 3.3 kB
+    // row, every five minutes, on every machine — nothing next to what the
+    // dashboard used to spend, but all of it for nothing.
+    let current = null;
+    const loadCurrent = async () => (current ?? (current = await ytTodoLoad()));
     const allToAdd = {};
     const allRemove = [];
     let failed = 0;
@@ -719,8 +725,9 @@ async function syncYoutubeTodo(interactive = false) {
         console.warn('[ecoute] yt list failed for playlist', pl.id, e);
         continue;
       }
+      if (!items.length) continue; // nothing in this playlist — nothing to read
       const tracked = await ytTrackedVideoIds(items.map((i) => i.videoId));
-      const seen = { ...current, ...allToAdd }; // dedupe across playlists too
+      const seen = { ...(await loadCurrent()), ...allToAdd }; // dedupe across playlists too
       const durations = await ytFetchDurations(items.map((i) => i.videoId), token);
       for (const it of items) it.durationSec = durations.get(it.videoId) || 0;
       const { toAdd, removeItemIds } = planYoutubeTodoSync(items, tracked, seen, pl.lang);
@@ -740,8 +747,15 @@ async function syncYoutubeTodo(interactive = false) {
       catch (e) { console.warn('[ecoute] yt playlist delete failed', id, e); }
     }
 
-    try { await ytBackfillDurations(token); }
-    catch (e) { console.warn('[ecoute] yt duration backfill failed', e); }
+    // Hourly rather than every tick: it reads the same row to ask a question
+    // that is almost always answered "nothing missing", and a length that
+    // arrives an hour late costs nobody anything.
+    const { ytBackfillLast = 0 } = await chrome.storage.local.get('ytBackfillLast');
+    if (Date.now() - ytBackfillLast > YT_DURATION_BACKFILL_INTERVAL_MS) {
+      try { await ytBackfillDurations(token); }
+      catch (e) { console.warn('[ecoute] yt duration backfill failed', e); }
+      await chrome.storage.local.set({ ytBackfillLast: Date.now() });
+    }
 
     await chrome.storage.local.set({ ytTodoLastSync: Date.now() });
     return { ok: true, added: Object.keys(allToAdd).length, removed, failed };
