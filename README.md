@@ -93,9 +93,9 @@ and a quick manual-entry form (for podcasts listened outside the browser).
 - Separate 🇫🇷 and 🇬🇧 daily goals
 - Recent sessions with delete, CSV export, EN / 繁體中文 toggle
 - Session checkboxes are mirrored with every other list in the extension
-  (`watch-sync.js`): tick a video on the dashboard, in 📺 À regarder or on the
-  ✈️ Voyage checklist and it is ticked in all of them, so a finished video is
-  confirmed once.
+  (`watch-sync.js`): tick a video on the dashboard, in 📺 À regarder or on
+  either trip checklist — ✈️ Sud de la France, 🇸🇬 Singapour — and it is ticked
+  in all of them, so a finished video is confirmed once.
 
 ### 📺 À regarder
 
@@ -115,11 +115,34 @@ Videos finished before `doneAt` existed have no stamp. They keep to the end of
 the finished half, ordered by when they were added, rather than claiming to
 have been watched at the epoch or just now.
 
+### ✈️ Trip checklists
+
+One page per trip, curated by hand rather than pulled from anywhere: **✈️ Sud
+de la France** (`todo.html` / `todo.js`, `kv_state` key `trip-checklist`) and
+**🇸🇬 Singapour** (`singapore.html` / `singapore.js`, key `singapore-checklist`).
+Separate keys mean separate progress — ticking off Marseille documentaries and
+Marina Bay ones never share a bar.
+
+Both run on `checklist.js`, which holds everything that happens to an item —
+ticking, cross-device sync, mirroring to the other lists, rendering — and
+documents the item schema. A page supplies only its sections and its key:
+
+```js
+initChecklist({ sections: SECTIONS, kvKey: 'singapore-checklist', surface: 'singapore' });
+```
+
+An item that links to one specific video carries a measured `sec`; a podcast
+item naming a show carries `approx`, the median of its last 40 episodes, shown
+as "≈35 min" because that is the honest precision. A search link has neither
+and stays hand-ticked, having nothing for watch-sync to match on. Where a
+search row is followed by what that search found, those rows carry `from` and
+are drawn nested under it.
+
 ### Shared ticks (`watch-sync.js`)
 
 Each list keys its items differently — À regarder by `videoId`, the dashboard by
-`watchKey` (language|type|title|channel|episode), Voyage by the curated item's
-own id — because each knows the content at a different moment. They are matched
+`watchKey` (language|type|title|channel|episode), the trip pages by the curated
+item's own id — because each knows the content at a different moment. They are matched
 instead through what a session records about the content itself:
 `listening_sessions.video_id`, and `channel` for a podcast show.
 

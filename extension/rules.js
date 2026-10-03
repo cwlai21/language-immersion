@@ -184,7 +184,7 @@ function sessionWatchKeys(rows) {
 
 /* ── Linking a curated list to what was actually watched ─────
  *
- * Pages like ✈️ Voyage curate their items by hand, so they can't key them the
+ * The trip pages curate their items by hand, so they can't key them the
  * way the dashboard does — a curated item exists long before any session. What
  * the two ends do share is what a session records about the thing itself: a
  * YouTube video id, or, for a podcast, the show in `channel`. An item declares

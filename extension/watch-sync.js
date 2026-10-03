@@ -1,8 +1,9 @@
 /* Keeps the checkboxes for the same piece of content in step across the
  * extension's several lists — "À regarder" (kv_state `video-todo`, keyed by
  * videoId), the dashboard's session list (`watch-todo`, keyed by watchKey),
- * and any curated page that opts in, such as ✈️ Voyage (`trip-checklist`,
- * keyed by the item's own id). Ticking a thing anywhere ticks it everywhere,
+ * and the curated trip pages, which opt in through checklist.js — Sud de la
+ * France (`trip-checklist`) and Singapour (`singapore-checklist`), each keyed
+ * by the item's own id. Ticking a thing anywhere ticks it everywhere,
  * so a finished video is confirmed once, not once per list.
  *
  * Each list is a "surface": a kv_state document, the keys it uses, and how to
