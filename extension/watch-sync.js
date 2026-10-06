@@ -42,7 +42,28 @@ const WATCH_TODO_KV = 'watch-todo';
 // Read a kv_state row, apply `mutate`, write it back. Re-reading first means a
 // mirror never clobbers a change the other device made meanwhile. `mutate`
 // returning null means "nothing to do" and skips the write.
-async function kvUpdate(key, mutate) {
+// One in-flight update per key, chained. Every kvUpdate is a read, a change,
+// and a write of the whole document, so two running at once both read the same
+// state and the second write erases the first's change. Ticking three boxes in
+// a row did exactly that: mirrorTick is deliberately not awaited, so three
+// updates of watch-todo overlapped and only the last one's tick survived, with
+// the other two left reading "todo" on the dashboard while their own page
+// showed them done.
+//
+// Serializing per key keeps each mutate() reading the result of the one before
+// it. Different documents still proceed in parallel — the point is only that
+// one document is never rewritten from two stale copies.
+const kvQueues = new Map();
+
+function kvUpdate(key, mutate) {
+  const previous = kvQueues.get(key) || Promise.resolve();
+  // Failures must not break the chain for everything queued behind them.
+  const run = previous.catch(() => {}).then(() => kvUpdateNow(key, mutate));
+  kvQueues.set(key, run.catch(() => {}));
+  return run;
+}
+
+async function kvUpdateNow(key, mutate) {
   let current = {};
   try {
     const rows = await sbRequest(`kv_state?key=eq.${key}&select=value`);
