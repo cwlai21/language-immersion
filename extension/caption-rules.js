@@ -21,18 +21,24 @@ function spokenCaptionLanguage(playerResponse) {
   const tracks = renderer.captionTracks || [];
   const audioTracks = renderer.audioTracks || [];
 
-  // The audio settles it. Each audio track names the caption track that goes
-  // with it, and the default audio track is the one the video plays in —
-  // index 1 of 21 on that tennis short, "en-US.4", pointing at caption track
-  // 11, "en". A dub the viewer selects by hand is not reflected here; the
-  // default is what plays unless they go looking.
+  // The audio settles it, and the track id is how it says so: the default
+  // audio track is the one the video plays in, and its id is "fr-FR.4",
+  // "en-US.10", "ja.10" — language first.
+  //
+  // Each audio track also names a caption track to show alongside it, and
+  // reading *that* was the first attempt. It is not the same claim, and the
+  // two can disagree: on L'Overcut's Singapore circuit preview — French
+  // title, French audio, French captions written by hand — the default audio
+  // track is "fr-FR.4" and the caption track it points at is the English
+  // auto-translation, so the video was announced as English. What a viewer is
+  // offered to read is a presentation choice; what the audio is in is a fact.
   const audio = audioTracks[renderer.defaultAudioTrackIndex];
   if (audio) {
+    const spoken = (audio.audioTrackId || '').split('.')[0];
+    if (spoken) return spoken;
+    // No id to read — the caption it pairs with is the next best guess.
     const paired = tracks[audio.defaultCaptionTrackIndex];
     if (paired && paired.languageCode) return paired.languageCode;
-    // No usable pairing — the track id carries the language itself.
-    const id = audio.audioTrackId || '';
-    if (id) return id.split('.')[0] || null;
   }
 
   // One auto-caption track and no audio track list: the ordinary video, and

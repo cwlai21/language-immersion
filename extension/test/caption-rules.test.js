@@ -6,6 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spokenCaptionLanguage } = require('../caption-rules.js');
+const { asrLanguage } = require('../lang-detect.js');
 
 // The real shape of that Short's player response, trimmed to what we read.
 function multiLanguageShort() {
@@ -23,23 +24,65 @@ function multiLanguageShort() {
   };
 }
 
-test('the spoken language is the default audio track\'s caption, not the first one listed', () => {
-  assert.equal(spokenCaptionLanguage(multiLanguageShort()), 'en');
+test('the spoken language comes from the default audio track, not whichever caption is listed first', () => {
+  // Japanese heads the caption list; the audio that plays is "en-US.4".
+  assert.equal(spokenCaptionLanguage(multiLanguageShort()), 'en-US');
+  assert.equal(asrLanguage({ asrLang: spokenCaptionLanguage(multiLanguageShort()) }), 'en');
 });
 
 test('a French video with the same 21-track treatment reads as French', () => {
   const pr = multiLanguageShort();
-  const r = pr.captions.playerCaptionsTracklistRenderer;
-  r.defaultAudioTrackIndex = 4;                        // "fr-FR.10"
-  r.audioTracks.forEach((a) => { a.defaultCaptionTrackIndex = 7; });  // "fr-FR"
+  pr.captions.playerCaptionsTracklistRenderer.defaultAudioTrackIndex = 4;  // "fr-FR.10"
   assert.equal(spokenCaptionLanguage(pr), 'fr-FR');
 });
 
-test('with no usable caption pairing, the audio track id names the language', () => {
+test('with no track id to read, the caption it pairs with is the fallback', () => {
   const pr = multiLanguageShort();
   const r = pr.captions.playerCaptionsTracklistRenderer;
-  r.audioTracks.forEach((a) => { delete a.defaultCaptionTrackIndex; });
-  assert.equal(spokenCaptionLanguage(pr), 'en-US');
+  r.audioTracks.forEach((a) => { delete a.audioTrackId; });
+  assert.equal(spokenCaptionLanguage(pr), 'en');   // caption track 11
+});
+
+test('the audio track id beats the caption it points at, when the two disagree', () => {
+  // L'Overcut's Singapore circuit preview: French title, French audio, French
+  // captions written by hand — and the French audio track points at the
+  // English auto-translation, which is what announced the video as English.
+  const pr = {
+    captions: {
+      playerCaptionsTracklistRenderer: {
+        captionTracks: [
+          { languageCode: 'fr' },                    // written by the channel
+          { languageCode: 'fr', kind: 'asr' },
+          { languageCode: 'en-US', kind: 'asr' },    // auto-translated
+        ],
+        audioTracks: [
+          { audioTrackId: 'en-US.10', defaultCaptionTrackIndex: 2 },  // a dub
+          { audioTrackId: 'fr-FR.4', defaultCaptionTrackIndex: 2 },   // the original
+        ],
+        defaultAudioTrackIndex: 1,
+      },
+    },
+  };
+  assert.equal(spokenCaptionLanguage(pr), 'fr-FR');
+  assert.equal(asrLanguage({ asrLang: spokenCaptionLanguage(pr) }), 'fr');
+});
+
+test('a dub the viewer is actually hearing counts as that language, not the original', () => {
+  // defaultAudioTrackIndex is what plays. If that is the dub, the dub is what
+  // they are listening to, and counting it as the original would be a lie.
+  const pr = {
+    captions: {
+      playerCaptionsTracklistRenderer: {
+        captionTracks: [{ languageCode: 'en', kind: 'asr' }],
+        audioTracks: [
+          { audioTrackId: 'en-US.4' },    // original
+          { audioTrackId: 'fr-FR.10' },   // dubbed
+        ],
+        defaultAudioTrackIndex: 1,
+      },
+    },
+  };
+  assert.equal(asrLanguage({ asrLang: spokenCaptionLanguage(pr) }), 'fr');
 });
 
 test('an ordinary single-ASR video still works the old way', () => {
@@ -74,12 +117,14 @@ test('a video with no captions yet is null, not a guess', () => {
 });
 
 test('the answer feeds asrLanguage, so a regional code still resolves', () => {
-  const { asrLanguage } = require('../lang-detect.js');
-  const pr = multiLanguageShort();
-  assert.equal(asrLanguage({ asrLang: spokenCaptionLanguage(pr) }), 'en');
-  const r = pr.captions.playerCaptionsTracklistRenderer;
-  r.audioTracks.forEach((a) => { a.defaultCaptionTrackIndex = 7; });  // "fr-FR"
-  assert.equal(asrLanguage({ asrLang: spokenCaptionLanguage(pr) }), 'fr');
-  r.audioTracks.forEach((a) => { a.defaultCaptionTrackIndex = 0; });  // "ja"
-  assert.equal(asrLanguage({ asrLang: spokenCaptionLanguage(pr) }), 'other');
+  // Whatever the audio track id says, asrLanguage has to reduce it to one of
+  // the three answers the rest of the extension understands.
+  const forAudio = (id) => {
+    const pr = multiLanguageShort();
+    pr.captions.playerCaptionsTracklistRenderer.audioTracks[1].audioTrackId = id;
+    return asrLanguage({ asrLang: spokenCaptionLanguage(pr) });
+  };
+  assert.equal(forAudio('en-US.4'), 'en');
+  assert.equal(forAudio('fr-FR.4'), 'fr');
+  assert.equal(forAudio('ja.4'), 'other');
 });
