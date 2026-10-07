@@ -108,7 +108,41 @@ function initChecklist({ sections, kvKey, surface }) {
     }
 
     const unheard = ALL_ITEMS.filter((item) => checked[item.id] && !done.has(item.id));
-    for (const item of unheard) await mirrorTick(surface, contentLinks(item), true);
+    let stillUnheard = false;
+    for (const item of unheard) {
+      if (!matchable(item)) continue; // a search link has nothing to mirror onto, ever
+      const reached = await mirrorTick(surface, contentLinks(item), true);
+      if (!reached) stillUnheard = true;
+    }
+    if (stillUnheard) scheduleMirrorRetry();
+  }
+
+  // A tick whose content has no session yet reaches nothing, and reconcile()
+  // would only repair it the next time this page is opened — by which time the
+  // dashboard has been showing it unwatched for however long. The session
+  // normally lands a minute or two after the tick (90 seconds of idle playback
+  // writes it), so a page left open can simply ask again.
+  //
+  // Bounded on purpose: a handful of attempts, and only while something is
+  // actually outstanding. An item with nothing to match on — a search link —
+  // never schedules one, because no amount of asking will resolve it.
+  const RETRY_MS = 2 * 60 * 1000;
+  const RETRY_LIMIT = 5;
+  let retryTimer = null;
+  let retriesLeft = RETRY_LIMIT;
+
+  function scheduleMirrorRetry() {
+    if (retryTimer || retriesLeft <= 0) return;
+    retriesLeft -= 1;
+    retryTimer = setTimeout(async () => {
+      retryTimer = null;
+      await reconcile();
+    }, RETRY_MS);
+  }
+
+  function matchable(item) {
+    const link = contentLinks(item);
+    return link.videoIds.length > 0 || link.shows.length > 0;
   }
 
   function updateProgress() {
@@ -144,8 +178,12 @@ function initChecklist({ sections, kvKey, surface }) {
           saveChecked();
           // Tick it on the dashboard and in À regarder too, where this item is
           // something they know about. Not awaited: the tick above is already
-          // saved, and the mirror is best-effort.
-          mirrorTick(surface, contentLinks(item), box.checked);
+          // saved, and the mirror is best-effort — but a mirror that reached
+          // nothing is worth asking about again, because the usual reason is
+          // that the session is still a minute or two from being written.
+          mirrorTick(surface, contentLinks(item), box.checked).then((reached) => {
+            if (!reached && matchable(item)) scheduleMirrorRetry();
+          });
         };
 
         const info = document.createElement('div');

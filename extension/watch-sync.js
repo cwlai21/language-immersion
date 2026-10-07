@@ -176,17 +176,23 @@ async function resolveLink({ videoIds = [], shows = [] }) {
 // Tell every other surface loaded on this page. Callers deliberately don't
 // await it: the tick that triggered it is already saved by its own page, and a
 // mirror that fails is a mirror that simply didn't happen.
+// Returns how many other lists it actually reached. Zero is a real answer, not
+// a failure: the content may be a search link, or a video whose session does
+// not exist yet — ticking something off while still watching it is the common
+// case, since a session is only written after 90 seconds of idle playback. A
+// caller that cares can ask again later.
 async function mirrorTick(origin, spec, done) {
   const targets = SURFACES.filter((s) => s.name !== origin);
-  if (!targets.length) return;
+  if (!targets.length) return 0;
   const link = await resolveLink(spec);
-  // Nothing to match on: a search link, or a video with no sessions and not on
-  // the playlist. Ordinary, not a failure.
-  if (!link.videoIds.length && !link.rows.length) return;
+  if (!link.videoIds.length && !link.rows.length) return 0;
+  let reached = 0;
   for (const surface of targets) {
     const keys = surface.keys(link);
-    if (keys.length) await kvUpdate(surface.kv, (state) => surface.patch(state, keys, done));
+    if (!keys.length) continue;
+    if (await kvUpdate(surface.kv, (state) => surface.patch(state, keys, done))) reached++;
   }
+  return reached;
 }
 
 /* ── Pull: catching up on what happened elsewhere ── */

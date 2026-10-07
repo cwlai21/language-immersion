@@ -44,7 +44,7 @@ function fakeDom() {
 // Run the engine with every collaborator stubbed, and report what it did.
 function run({ sections, kvKey = 'test-list', surface = 'test', stored = {} }) {
   const dom = fakeDom();
-  const calls = { saved: [], mirrored: [], surfaces: [] };
+  const calls = { saved: [], mirrored: [], surfaces: [], timers: [] };
   const sandbox = {
     document: dom.document,
     localStorage: { store: {}, getItem(k) { return this.store[k] ?? null; },
@@ -60,6 +60,9 @@ function run({ sections, kvKey = 'test-list', surface = 'test', stored = {} }) {
     formatDuration: (s) => (s ? `${Math.round(s / 60)} min` : ''),
     approxLength: (s) => (s ? `≈${Math.round(s / 60)} min` : ''),
     t: (k) => k,
+    // Captured rather than run: the engine schedules a two-minute retry for a
+    // mirror that reached nothing, and a real timer would hold the test open.
+    setTimeout: (fn, ms) => { calls.timers.push({ fn, ms }); return 0; },
   };
   const names = Object.keys(sandbox);
   // eslint-disable-next-line no-new-func
@@ -125,9 +128,9 @@ test('the list renders a row per item and a progress count', async () => {
 // ours the others never heard about — which is what happens whenever an item
 // is ticked before its session exists, the normal case for a video ticked
 // while still watching it: sessions are only written after 90 seconds idle.
-function runReconcile({ stored = {}, doneElsewhere = new Set() }) {
+function runReconcile({ stored = {}, doneElsewhere = new Set(), reached = 1 }) {
   const dom = fakeDom();
-  const calls = { mirrored: [], saved: [] };
+  const calls = { mirrored: [], saved: [], timers: [] };
   const sandbox = {
     document: dom.document,
     localStorage: { store: {}, getItem(k) { return this.store[k] ?? null; }, setItem(k, v) { this.store[k] = v; } },
@@ -136,10 +139,14 @@ function runReconcile({ stored = {}, doneElsewhere = new Set() }) {
       return [{ value: JSON.stringify(stored) }];
     },
     registerSurface: () => {},
-    mirrorTick: (origin, link, done) => { calls.mirrored.push({ origin, ids: link.videoIds, done }); },
+    mirrorTick: async (origin, link, done) => {
+      calls.mirrored.push({ origin, ids: link.videoIds, done });
+      return reached;   // how many other lists it got to; 0 means nobody heard
+    },
     doneElsewhere: async () => doneElsewhere,
     contentLinks: (item) => ({ videoIds: [item.id], shows: [] }),
     formatDuration: () => '', approxLength: () => '', t: (k) => k,
+    setTimeout: (fn, ms) => { calls.timers.push({ fn, ms }); return 0; },
   };
   const names = Object.keys(sandbox);
   // eslint-disable-next-line no-new-func
@@ -177,4 +184,34 @@ test('pulling still fills in only the items we have no answer for', async () => 
   const saved = calls.saved.at(-1);
   assert.equal(saved.a, true, 'unknown item adopts the others\' answer');
   assert.equal(saved.b, false, 'deliberately cleared stays cleared');
+});
+
+test('a re-push that still reaches nobody asks again later, instead of waiting for the next visit', async () => {
+  // The session is written 90 seconds after playback goes idle, so a video
+  // ticked while still watching it mirrors to nothing — and the dashboard
+  // would show it unwatched until this page was next opened.
+  const { calls } = runReconcile({ stored: { a: true }, doneElsewhere: new Set(), reached: 0 });
+  await settle();
+  assert.equal(calls.mirrored.length, 1, 'it tried');
+  assert.equal(calls.timers.length, 1, 'and scheduled a retry');
+  assert.equal(calls.timers[0].ms, 120000, 'two minutes — long enough for the session to land');
+});
+
+test('a re-push that got through does not schedule anything', async () => {
+  const { calls } = runReconcile({ stored: { a: true }, doneElsewhere: new Set(), reached: 1 });
+  await settle();
+  assert.deepEqual(calls.timers, []);
+});
+
+test('retries are bounded, so a page left open all day does not ask forever', async () => {
+  const { calls } = runReconcile({ stored: { a: true }, doneElsewhere: new Set(), reached: 0 });
+  await settle();
+  for (let i = 0; i < 20; i++) {
+    const timer = calls.timers.at(-1);
+    if (!timer) break;
+    await timer.fn();        // what the clock would have run
+    await settle();
+  }
+  assert.ok(calls.timers.length <= 5, `asked ${calls.timers.length} times, expected no more than 5`);
+  assert.ok(calls.timers.length >= 2, 'but it did try more than once');
 });
