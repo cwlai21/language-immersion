@@ -119,3 +119,62 @@ test('the list renders a row per item and a progress count', async () => {
   assert.equal(rows.length, 2, 'two items');
   assert.equal(dom.byId.progress.textContent, '1 / 2 ✓');
 });
+
+/* ── Reconcile, both directions ── */
+// The pull half catches ticks made elsewhere. The push half catches ticks of
+// ours the others never heard about — which is what happens whenever an item
+// is ticked before its session exists, the normal case for a video ticked
+// while still watching it: sessions are only written after 90 seconds idle.
+function runReconcile({ stored = {}, doneElsewhere = new Set() }) {
+  const dom = fakeDom();
+  const calls = { mirrored: [], saved: [] };
+  const sandbox = {
+    document: dom.document,
+    localStorage: { store: {}, getItem(k) { return this.store[k] ?? null; }, setItem(k, v) { this.store[k] = v; } },
+    sbRequest: async (query, opts) => {
+      if (opts && opts.method === 'POST') { calls.saved.push(JSON.parse(opts.body.value)); return []; }
+      return [{ value: JSON.stringify(stored) }];
+    },
+    registerSurface: () => {},
+    mirrorTick: (origin, link, done) => { calls.mirrored.push({ origin, ids: link.videoIds, done }); },
+    doneElsewhere: async () => doneElsewhere,
+    contentLinks: (item) => ({ videoIds: [item.id], shows: [] }),
+    formatDuration: () => '', approxLength: () => '', t: (k) => k,
+  };
+  const names = Object.keys(sandbox);
+  // eslint-disable-next-line no-new-func
+  new Function(...names, `${SOURCE}\n;initChecklist(${JSON.stringify({ sections: SECTIONS, kvKey: 'k', surface: 'singapore' })});`)
+    (...names.map((n) => sandbox[n]));
+  return { calls, dom };
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 0));
+
+test('a tick the other lists never heard about is pushed to them again', async () => {
+  // Exactly the Lighting-the-GP case: ticked here, no session yet, so the
+  // mirror reached nothing and the dashboard kept showing it unwatched.
+  const { calls } = runReconcile({ stored: { a: true }, doneElsewhere: new Set() });
+  await settle();
+  assert.deepEqual(calls.mirrored, [{ origin: 'singapore', ids: ['a'], done: true }]);
+});
+
+test('a tick the others already know about is not pushed again', async () => {
+  const { calls } = runReconcile({ stored: { a: true }, doneElsewhere: new Set(['a']) });
+  await settle();
+  assert.deepEqual(calls.mirrored, [], 'nothing to say');
+});
+
+test('an item cleared on purpose is never re-pushed', async () => {
+  // false, not missing — unticking anywhere mirrors, so this is a decision.
+  const { calls } = runReconcile({ stored: { a: false }, doneElsewhere: new Set() });
+  await settle();
+  assert.deepEqual(calls.mirrored, []);
+});
+
+test('pulling still fills in only the items we have no answer for', async () => {
+  const { calls } = runReconcile({ stored: { b: false }, doneElsewhere: new Set(['a', 'b']) });
+  await settle();
+  const saved = calls.saved.at(-1);
+  assert.equal(saved.a, true, 'unknown item adopts the others\' answer');
+  assert.equal(saved.b, false, 'deliberately cleared stays cleared');
+});

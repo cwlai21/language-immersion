@@ -80,16 +80,35 @@ function initChecklist({ sections, kvKey, surface }) {
     },
   });
 
-  // Catch up on ticks made elsewhere while this page wasn't open. Only items we
+  // Catch up with the other lists, in both directions.
+  //
+  // Pulling: ticks made elsewhere while this page wasn't open. Only items we
   // have no answer for are filled in — an item the user deliberately cleared is
   // stored as false, not missing, so it stays cleared.
+  //
+  // Pushing: a tick of ours the other lists never heard about. mirrorTick
+  // matches an item to its sessions by video id, so ticking something off
+  // before its session exists mirrors to nothing at all — and a video ticked
+  // while still watching it is the normal case, not an edge one: the session
+  // is only written once playback has been idle for 90 seconds. "Lighting the
+  // F1 Singapore Grand Prix" was ticked fourteen seconds before its session
+  // landed, so the dashboard went on showing it unwatched.
+  //
+  // A tick of ours that the others don't know about can only be a mirror that
+  // didn't happen. Unticking anywhere mirrors too, so a box cleared on the
+  // dashboard would have cleared ours as well, rather than leaving us done.
   async function reconcile() {
     const done = await doneElsewhere(ALL_ITEMS);
+
     const missing = [...done].filter((id) => checked[id] === undefined);
-    if (!missing.length) return;
-    for (const id of missing) checked[id] = true;
-    render();
-    await saveChecked();
+    if (missing.length) {
+      for (const id of missing) checked[id] = true;
+      render();
+      await saveChecked();
+    }
+
+    const unheard = ALL_ITEMS.filter((item) => checked[item.id] && !done.has(item.id));
+    for (const item of unheard) await mirrorTick(surface, contentLinks(item), true);
   }
 
   function updateProgress() {
