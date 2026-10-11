@@ -15,6 +15,8 @@ const {
   streakThreshold, goalStreak,
   legacyWatchKey,
   migrateWatchKeys,
+
+  vacationDay,
 } = require('../rules.js');
 
 const min = (m) => m * 60; // minutes -> seconds, for session fixtures
@@ -618,4 +620,70 @@ test('pruning is safe to run on a view that only knows some of the keys', () => 
   // ...and with no sessions in view at all, it empties the lot. Which is why
   // it may only run where a deletion just happened, never on a load.
   assert.deepEqual(pruneDeadKeys(state, []).state, {});
+});
+
+/* ── Vacation days ── */
+// YouTube and series are the sit-down habits. A day with neither is a day
+// travelling, and it holds the streak on different terms: reading in both
+// languages, and the French deck reviewed.
+const day = (date, type, language, minutes) =>
+  ({ date, type, language, seconds: minutes * 60 });
+
+const travelling = (date) => [
+  day(date, 'reading', 'fr', 20),
+  day(date, 'reading', 'en', 15),
+  day(date, 'anki', 'fr', 10),
+];
+
+test('a travelling day is one with no youtube and no series', () => {
+  assert.equal(vacationDay(travelling('2026-10-09')), true);
+  assert.equal(vacationDay([...travelling('2026-10-09'), day('2026-10-09', 'youtube', 'fr', 5)]), false);
+  assert.equal(vacationDay([...travelling('2026-10-09'), day('2026-10-09', 'series', 'en', 5)]), false);
+});
+
+test('podcasts travel too, so they do not end a vacation day', () => {
+  assert.equal(vacationDay([...travelling('2026-10-09'), day('2026-10-09', 'podcast', 'fr', 40)]), true);
+});
+
+test('a travelling day still has to do the work: both readings and the French deck', () => {
+  const d = '2026-10-08';
+  assert.equal(vacationDay([day(d, 'reading', 'fr', 30), day(d, 'reading', 'en', 30)]), false, 'no anki');
+  assert.equal(vacationDay([day(d, 'reading', 'fr', 30), day(d, 'anki', 'fr', 10)]), false, 'no English reading');
+  assert.equal(vacationDay([day(d, 'reading', 'en', 30), day(d, 'anki', 'fr', 10)]), false, 'no French reading');
+  assert.equal(vacationDay([day(d, 'reading', 'fr', 30), day(d, 'reading', 'en', 30), day(d, 'anki', 'en', 10)]),
+    false, 'the deck has to be the French one');
+  assert.equal(vacationDay([]), false);
+});
+
+test('a travelling day keeps the streak on minutes it would otherwise fail', () => {
+  // Nowhere near the 60-minute goal in either language, and it counts anyway.
+  const sessions = [
+    ...travelling('2026-10-11'), ...travelling('2026-10-10'), ...travelling('2026-10-09'),
+  ];
+  const now = new Date('2026-10-11T12:00:00');
+  assert.equal(goalStreak(sessions, 'all', now), 3);
+  assert.equal(goalStreak(sessions, 'fr', now), 3);
+  assert.equal(goalStreak(sessions, 'en', now), 3);
+});
+
+test('a day at the desk is still judged on minutes, vacation rule or not', () => {
+  // Reading in both and the deck done, but a YouTube session makes it an
+  // ordinary day — and 20 minutes does not clear the goal.
+  const d = '2026-10-11';
+  const sessions = [...travelling(d), day(d, 'youtube', 'fr', 5)];
+  assert.equal(goalStreak(sessions, 'all', new Date('2026-10-11T12:00:00')), 0);
+});
+
+test('a travelling day bridges two ordinary days instead of breaking the run', () => {
+  const sessions = [
+    day('2026-10-11', 'youtube', 'fr', 70), day('2026-10-11', 'youtube', 'en', 70),
+    ...travelling('2026-10-10'),
+    day('2026-10-09', 'youtube', 'fr', 70), day('2026-10-09', 'youtube', 'en', 70),
+  ];
+  assert.equal(goalStreak(sessions, 'all', new Date('2026-10-11T12:00:00')), 3);
+});
+
+test('an empty day still breaks the streak — vacation is not absence', () => {
+  const sessions = [...travelling('2026-10-11'), ...travelling('2026-10-09')];
+  assert.equal(goalStreak(sessions, 'all', new Date('2026-10-11T12:00:00')), 1);
 });

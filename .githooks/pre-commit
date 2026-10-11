@@ -12,3 +12,12 @@ fi
 
 echo "pre-commit: running dashboard sanity tests..."
 node --test extension/test/*.test.js
+
+# The Anki add-on is Python and lives outside the Node suite, but it decides
+# whether a day's studying is recorded at all — a day it drops is gone.
+if command -v python3 >/dev/null 2>&1; then
+  echo "pre-commit: running Anki add-on tests..."
+  python3 anki-addon/test_push.py
+else
+  echo "pre-commit: python3 not found, skipping add-on tests" >&2
+fi

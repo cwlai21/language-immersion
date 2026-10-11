@@ -85,7 +85,16 @@ and a quick manual-entry form (for podcasts listened outside the browser).
 *Open Dashboard* in the popup opens a full page with:
 
 - Language filter: **All** (stacked 🇫🇷+🇬🇧 charts) / **Français** / **English**
-- Stats cards: today, week, month, day streak, all-time total
+- Stats cards: today, week, month, day streak, goal streak, all-time total
+- **Goal streak** counts days in a row that cleared the daily goal in both
+  languages (the goal in force on that date — 30 min before 2026-08-08, 60
+  after). Today falling short doesn't break it: an in-progress day counts from
+  yesterday rather than reading as a reset.
+- **Travelling days** are judged differently. A day with no YouTube and no
+  series sessions is a day away from the desk, and it holds the streak if both
+  languages have a reading session and the French deck was reviewed —
+  regardless of minutes. Podcasts don't disqualify a day; they travel too. A
+  day with nothing at all still breaks the streak: vacation is not absence.
 - Daily (14 days) / Weekly (12 weeks) / Monthly (12 months) bar charts —
   in single-language view, bars turn green when the daily/weekly goal is met
 - YouTube vs Podcast breakdown donut
@@ -171,8 +180,15 @@ Anki already records how long you spend answering each card (`revlog.time`,
 capped at the deck's *maximum answer seconds*, default 60s). The add-on sums
 that per day and per language and upserts **one row per day per language**
 (`type = 'anki'`, `source = 'anki'`) — no timer needed, and reviews done on
-AnkiMobile/AnkiWeb are picked up after they sync (it recomputes the last 3
-days on every run).
+AnkiMobile/AnkiWeb are picked up after they sync (it recomputes the last 14
+days on every run, in one request).
+
+That window is the whole safety net: a day's reviews are only ever uploaded
+while they are still inside it, and nothing goes looking for them afterwards.
+It was three days until 8 Oct 2026 went missing — twenty-two minutes over
+seventy cards, sitting in the local collection, never uploaded because the
+reviews arrived after the window had moved on. Re-reading old days is safe
+(a day's total is only ever raised, never lowered) and costs one request.
 
 Days follow **Anki's rollover hour** ("next day starts at", default 4am), not
 midnight, so daily totals match Anki's own stats and heatmap — a 1am review

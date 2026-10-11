@@ -68,6 +68,18 @@ def _rollover(col):
         return 4
 
 
+# Two weeks, not three days. A day's reviews only reach Supabase while they
+# are still inside this window, so anything that syncs late — reviews done on
+# the phone, or a stretch where Anki simply isn't opened on this machine — was
+# lost for good once three days had passed. That is not hypothetical: 8 Oct
+# 2026, twenty-two minutes over seventy cards, sat in the local collection and
+# never reached the dashboard, and the missing row broke a 72-day streak.
+#
+# Re-reading old days is safe and nearly free: _push only ever raises a day's
+# total, and reads the whole window in one request.
+DAYS_BACK = 14
+
+
 def _daily_totals(col, days_back):
     """Return {(date_str, lang): seconds} for the last `days_back` Anki days.
 
@@ -114,13 +126,28 @@ def _daily_totals(col, days_back):
 
 def _push(totals):
     cfg = _config()
+    if not totals:
+        return
+
+    # One read for the whole window, not one per day. The window is wide (see
+    # days_back) and this runs every few minutes on two machines, so asking
+    # fourteen separate questions to be told "no change" fourteen times is the
+    # kind of politeness that ran a 5 GB egress allowance out in a month.
+    oldest = min(day for day, _ in totals)
+    try:
+        rows = _sb_request(
+            cfg,
+            f"listening_sessions?date=gte.{oldest}&source=eq.anki"
+            f"&select=id,date,language,seconds",
+        ) or []
+    except Exception as e:  # offline etc. — next sync retries
+        _log(f"could not read existing rows: {e}")
+        return
+    stored = {(r["date"], r["language"]): r for r in rows}
+
     for (day, lang), seconds in totals.items():
         try:
-            existing = _sb_request(
-                cfg,
-                f"listening_sessions?date=eq.{day}&language=eq.{lang}"
-                f"&source=eq.anki&select=id,seconds",
-            )
+            existing = stored.get((day, lang))
             if existing:
                 # Only ever raise the total, never lower it. Two machines share
                 # one row per day/language, and while AnkiWeb sync is down each
@@ -131,10 +158,10 @@ def _push(totals):
                 # The cost: a day whose reviews are genuinely deleted keeps its
                 # old number. To force a correction, delete the row in the
                 # dashboard; the next sync recreates it from the collection.
-                if seconds > existing[0]["seconds"]:
+                if seconds > existing["seconds"]:
                     _sb_request(
                         cfg,
-                        f"listening_sessions?id=eq.{existing[0]['id']}",
+                        f"listening_sessions?id=eq.{existing['id']}",
                         method="PATCH",
                         body={"seconds": seconds},
                     )
@@ -164,7 +191,7 @@ def sync():
         _log("not configured; skipping")
         return
     try:
-        totals = _daily_totals(mw.col, int(cfg.get("days_back", 3)))
+        totals = _daily_totals(mw.col, int(cfg.get("days_back", DAYS_BACK)))
     except Exception as e:
         _log(f"collection query failed: {e}")
         return

@@ -357,6 +357,22 @@ function streakThreshold(date) {
   return STREAK_GOAL_HISTORY[STREAK_GOAL_HISTORY.length - 1].min;
 }
 
+// A day away from the desk rather than a day off. YouTube and series are the
+// sit-down habits; a day with neither is a day travelling, and the minutes
+// threshold is the wrong question to ask of it. What is asked instead is
+// whether the day still did the work that travels: reading in both languages,
+// and the French deck reviewed.
+//
+// Podcasts don't disqualify a day — they travel too. Anything the type field
+// doesn't recognise counts as YouTube (normType), so an unexpected row ends
+// the vacation rather than quietly extending a streak.
+function vacationDay(rows) {
+  if (!rows || !rows.length) return false;
+  if (rows.some((s) => normType(s) === 'youtube' || normType(s) === 'series')) return false;
+  const has = (type, lang) => rows.some((s) => normType(s) === type && sessionLang(s) === lang);
+  return has('reading', 'fr') && has('reading', 'en') && has('anki', 'fr');
+}
+
 // How many days in a row the goal has been met, counting back from today.
 // `filter` follows the dashboard's language filter: 'fr'/'en' check that one
 // language; 'all' requires *both* languages to clear the goal that day. Today
@@ -365,14 +381,18 @@ function streakThreshold(date) {
 // reset. Each day is judged against the goal active on that date (see
 // streakThreshold). `now` and `thresholdFor` are injectable for tests.
 function goalStreak(sessions, filter, rawNow = new Date(), thresholdFor = streakThreshold) {
-  const byDay = {}; // { date: { fr: minutes, en: minutes } }
+  const byDay = {}; // { date: { fr: minutes, en: minutes, rows } }
   for (const s of sessions) {
-    const bucket = byDay[s.date] || (byDay[s.date] = { fr: 0, en: 0 });
+    const bucket = byDay[s.date] || (byDay[s.date] = { fr: 0, en: 0, rows: [] });
     bucket[sessionLang(s)] += s.seconds / 60;
+    bucket.rows.push(s);
   }
   const met = (date) => {
     const m = byDay[date];
     if (!m) return false; // a day with no listening never counts
+    // A travelling day holds the streak on its own terms, whichever language
+    // the dashboard is filtered to: the rule already asks for both of them.
+    if (vacationDay(m.rows)) return true;
     const threshold = thresholdFor(date);
     if (filter === 'fr') return m.fr >= threshold;
     if (filter === 'en') return m.en >= threshold;
@@ -400,6 +420,7 @@ if (typeof module !== 'undefined') {
     videoIdFromUrl, normShow, contentLinks, doneItemIds,
     withDoneAt, compareWatchlist, doneAtLabel,
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
+    vacationDay,
     STREAK_GOAL_HISTORY, streakThreshold, goalStreak,
   };
 }

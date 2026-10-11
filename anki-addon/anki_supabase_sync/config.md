@@ -8,4 +8,7 @@
   Decks that match no prefix are ignored.
 - **sync_interval_minutes** — how often to sync while Anki is open.
 - **days_back** — how many recent days to recompute each sync (covers reviews
-  done on AnkiMobile/AnkiWeb that arrive later via sync).
+  done on AnkiMobile/AnkiWeb that arrive later via sync). A day that syncs in
+  later than this is never uploaded at all, so the window is two weeks rather
+  than a few days; the whole window costs one request, and a day's total is
+  only ever raised, so recomputing an old day cannot lower it.
