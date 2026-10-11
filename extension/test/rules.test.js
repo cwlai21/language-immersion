@@ -687,3 +687,42 @@ test('an empty day still breaks the streak — vacation is not absence', () => {
   const sessions = [...travelling('2026-10-11'), ...travelling('2026-10-09')];
   assert.equal(goalStreak(sessions, 'all', new Date('2026-10-11T12:00:00')), 1);
 });
+
+test('the goal ring agrees with the streak on a travelling day', () => {
+  // Nowhere near 60 minutes in either language, and the ring reads full —
+  // the same day the streak counts, reported as travel rather than as a
+  // goal that was hit.
+  const rows = travelling('2026-10-11');
+  const all = goalStatusAll({ fr: 60, en: 60 }, 20, 15, rows);
+  assert.equal(all.done, true);
+  assert.equal(all.pct, 1);
+  assert.equal(all.vacation, true);
+
+  const single = goalStatusSingle(60, 20, rows);
+  assert.deepEqual(single, { done: true, pct: 1, vacation: true });
+});
+
+test('a day at the desk is still measured in minutes', () => {
+  const rows = [...travelling('2026-10-11'), day('2026-10-11', 'youtube', 'fr', 5)];
+  const all = goalStatusAll({ fr: 60, en: 60 }, 25, 15, rows);
+  assert.equal(all.done, false);
+  assert.equal(all.vacation, false);
+  assert.ok(all.pct < 1);
+  assert.equal(goalStatusSingle(60, 25, rows).done, false);
+});
+
+test('a goal met on minutes is not reported as travel', () => {
+  // Both can be true at once; the day should read as the goal being hit.
+  const rows = travelling('2026-10-11');
+  assert.equal(goalStatusAll({ fr: 60, en: 60 }, 70, 70, rows).vacation, true);
+  assert.equal(goalStatusAll({ fr: 60, en: 60 }, 70, 70, []).vacation, false);
+  assert.equal(goalStatusAll({ fr: 60, en: 60 }, 70, 70, []).done, true);
+});
+
+test('the goal status still works when nobody passes today\'s rows', () => {
+  // Older callers, and the popup before its query included `type`.
+  assert.equal(goalStatusSingle(60, 70).done, true);
+  assert.equal(goalStatusSingle(60, 30).done, false);
+  assert.equal(goalStatusAll({ fr: 60, en: 60 }, 70, 70).done, true);
+  assert.equal(goalStatusSingle(60, 70).vacation, false);
+});

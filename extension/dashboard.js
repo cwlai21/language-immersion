@@ -39,16 +39,16 @@ function currentGoal() {
 // so it's covered by the Node test suite; this just gathers the inputs.
 function goalStatus(stats) {
   const tk = todayKey();
+  // Today's rows, not just its minutes: a travelling day clears the goal on
+  // what was done rather than how long it took (see vacationDay).
+  const todayRows = allSessions.filter((s) => s.date === tk);
   if (langFilter === 'all') {
-    const frToday = allSessions
-      .filter((s) => s.date === tk && sessionLang(s) === 'fr')
+    const minutes = (lang) => todayRows
+      .filter((s) => sessionLang(s) === lang)
       .reduce((sum, s) => sum + s.seconds / 60, 0);
-    const enToday = allSessions
-      .filter((s) => s.date === tk && sessionLang(s) === 'en')
-      .reduce((sum, s) => sum + s.seconds / 60, 0);
-    return goalStatusAll(goals, frToday, enToday);
+    return goalStatusAll(goals, minutes('fr'), minutes('en'), todayRows);
   }
-  return goalStatusSingle(goals[langFilter], stats.today);
+  return goalStatusSingle(goals[langFilter], stats.today, todayRows);
 }
 
 /* ── Data ─────────────────────────────────── */
@@ -443,7 +443,9 @@ function render() {
   const fill = document.getElementById('goalFill');
   fill.style.width = pct + '%';
   fill.classList.toggle('done', gs.done);
-  document.getElementById('goalText').textContent = gs.done
+  document.getElementById('goalText').textContent = gs.vacation
+    ? t('goalVacation')
+    : gs.done
     ? t('goalDone')
     : langFilter === 'all'
       ? `🇫🇷 ${Math.round(gs.frToday)}/${goals.fr} · 🇬🇧 ${Math.round(gs.enToday)}/${goals.en} ${t('goalUnit')}`

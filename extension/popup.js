@@ -204,7 +204,9 @@ async function loadStats() {
   const from = weekStart < monthStart ? weekStart : monthStart;
 
   try {
-    statsRows = await sb.listSessions(`select=date,seconds,language&date=gte.${from}`);
+    // `type` rides along so the goal can tell a travelling day from a day at
+    // the desk (vacationDay) — it is one short string per row.
+    statsRows = await sb.listSessions(`select=date,seconds,language,type&date=gte.${from}`);
   } catch (e) {
     document.getElementById('errorText').textContent = t('loadError');
     document.getElementById('errorText').hidden = false;
@@ -255,13 +257,18 @@ async function renderStats() {
   } catch { goals = null; }
   if (!goals) ({ goals = { fr: 30, en: 30 } } = await chrome.storage.sync.get('goals'));
   const goal = goals[statsLang] || 30;
-  const goalStatus = goalStatusSingle(goal, stats.today);
+  // Every row of today, both languages: a travelling day is defined across
+  // them (reading in each, and the French deck), not within the filtered one.
+  const todayRows = statsRows.filter((r) => r.date === tk);
+  const goalStatus = goalStatusSingle(goal, stats.today, todayRows);
   const pct = Math.round(goalStatus.pct * 100);
   const fill = document.getElementById('goalFill');
   fill.style.width = pct + '%';
   fill.classList.toggle('done', goalStatus.done);
   document.getElementById('goalText').textContent =
-    goalStatus.done ? t('goalDone') : `${Math.round(stats.today)} ${t('goalOf')} ${goal} ${t('goalUnit')}`;
+    goalStatus.vacation ? t('goalVacation')
+      : goalStatus.done ? t('goalDone')
+      : `${Math.round(stats.today)} ${t('goalOf')} ${goal} ${t('goalUnit')}`;
 
   const pendingText = document.getElementById('pendingText');
   if (tracking && tracking.pendingCount > 0) {

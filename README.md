@@ -95,6 +95,9 @@ and a quick manual-entry form (for podcasts listened outside the browser).
   languages have a reading session and the French deck was reviewed —
   regardless of minutes. Podcasts don't disqualify a day; they travel too. A
   day with nothing at all still breaks the streak: vacation is not absence.
+  The goal ring on the dashboard and in the popup follows the same rule, and
+  says which of the two happened — "Jour de voyage — série maintenue ✈️"
+  rather than claiming a 60-minute goal was hit.
 - Daily (14 days) / Weekly (12 weeks) / Monthly (12 months) bar charts —
   in single-language view, bars turn green when the daily/weekly goal is met
 - YouTube vs Podcast breakdown donut

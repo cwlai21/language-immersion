@@ -317,20 +317,28 @@ function pruneDeadKeys(watchState, allSessions) {
 // individually reached their own goal — a big French session doesn't cover
 // for English (or vice versa), so this is deliberately not "combined total
 // >= combined goal".
-function goalStatusAll(goals, frToday, enToday) {
+// `todayRows` are today's sessions, so the ring can agree with the streak: a
+// travelling day (vacationDay) is done on its own terms rather than on
+// minutes. It is reported as `vacation` rather than folded into `done`, so the
+// page can say which of the two it was instead of claiming a goal was hit.
+function goalStatusAll(goals, frToday, enToday, todayRows) {
   const frPct = goals.fr > 0 ? Math.min(1, frToday / goals.fr) : 1;
   const enPct = goals.en > 0 ? Math.min(1, enToday / goals.en) : 1;
+  const vacation = vacationDay(todayRows);
   return {
-    done: frToday >= goals.fr && enToday >= goals.en,
-    pct: Math.min(frPct, enPct),
+    done: vacation || (frToday >= goals.fr && enToday >= goals.en),
+    pct: vacation ? 1 : Math.min(frPct, enPct),
+    vacation,
     frToday, enToday,
   };
 }
 
-function goalStatusSingle(goal, today) {
+function goalStatusSingle(goal, today, todayRows) {
+  const vacation = vacationDay(todayRows);
   return {
-    done: today >= goal,
-    pct: goal > 0 ? Math.min(1, today / goal) : 1,
+    done: vacation || today >= goal,
+    pct: vacation ? 1 : (goal > 0 ? Math.min(1, today / goal) : 1),
+    vacation,
   };
 }
 
