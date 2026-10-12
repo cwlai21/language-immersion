@@ -17,6 +17,7 @@ const {
   migrateWatchKeys,
 
   vacationDay,
+  VACATION_SCREEN_LIMIT_MIN,
 } = require('../rules.js');
 
 const min = (m) => m * 60; // minutes -> seconds, for session fixtures
@@ -635,10 +636,31 @@ const travelling = (date) => [
   day(date, 'anki', 'fr', 10),
 ];
 
-test('a travelling day is one with no youtube and no series', () => {
+test('a travelling day is one with no real amount of youtube or series', () => {
   assert.equal(vacationDay(travelling('2026-10-09')), true);
-  assert.equal(vacationDay([...travelling('2026-10-09'), day('2026-10-09', 'youtube', 'fr', 5)]), false);
-  assert.equal(vacationDay([...travelling('2026-10-09'), day('2026-10-09', 'series', 'en', 5)]), false);
+  assert.equal(vacationDay([...travelling('2026-10-09'), day('2026-10-09', 'youtube', 'fr', 40)]), false);
+  assert.equal(vacationDay([...travelling('2026-10-09'), day('2026-10-09', 'series', 'en', 40)]), false);
+});
+
+test('a clip or two does not cost the day', () => {
+  // 3m40s of tennis highlights on 11 Oct 2026 disqualified a day of reading
+  // and Anki, and a 72-day streak with it.
+  const d = '2026-10-11';
+  const withClip = (mins) => vacationDay([...travelling(d), day(d, 'youtube', 'en', mins)]);
+  assert.equal(withClip(4), true);
+  assert.equal(withClip(VACATION_SCREEN_LIMIT_MIN), true, 'the limit itself is still a travelling day');
+  assert.equal(withClip(VACATION_SCREEN_LIMIT_MIN + 1), false);
+});
+
+test('the allowance is for the whole day, not for each sitting', () => {
+  const d = '2026-10-11';
+  const rows = [...travelling(d), day(d, 'youtube', 'en', 8), day(d, 'series', 'fr', 9)];
+  assert.equal(vacationDay(rows), false, '17 minutes between them is a desk session');
+});
+
+test('podcasts never eat into the allowance', () => {
+  const d = '2026-10-11';
+  assert.equal(vacationDay([...travelling(d), day(d, 'podcast', 'fr', 90)]), true);
 });
 
 test('podcasts travel too, so they do not end a vacation day', () => {
@@ -667,10 +689,10 @@ test('a travelling day keeps the streak on minutes it would otherwise fail', () 
 });
 
 test('a day at the desk is still judged on minutes, vacation rule or not', () => {
-  // Reading in both and the deck done, but a YouTube session makes it an
+  // Reading in both and the deck done, but a real YouTube session makes it an
   // ordinary day — and 20 minutes does not clear the goal.
   const d = '2026-10-11';
-  const sessions = [...travelling(d), day(d, 'youtube', 'fr', 5)];
+  const sessions = [...travelling(d), day(d, 'youtube', 'fr', 45)];
   assert.equal(goalStreak(sessions, 'all', new Date('2026-10-11T12:00:00')), 0);
 });
 
@@ -703,7 +725,7 @@ test('the goal ring agrees with the streak on a travelling day', () => {
 });
 
 test('a day at the desk is still measured in minutes', () => {
-  const rows = [...travelling('2026-10-11'), day('2026-10-11', 'youtube', 'fr', 5)];
+  const rows = [...travelling('2026-10-11'), day('2026-10-11', 'youtube', 'fr', 45)];
   const all = goalStatusAll({ fr: 60, en: 60 }, 25, 15, rows);
   assert.equal(all.done, false);
   assert.equal(all.vacation, false);

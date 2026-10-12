@@ -365,18 +365,30 @@ function streakThreshold(date) {
   return STREAK_GOAL_HISTORY[STREAK_GOAL_HISTORY.length - 1].min;
 }
 
+// How much YouTube and series a travelling day tolerates. Not zero: away from
+// the desk you still open the odd thing on a phone, and the rule was written
+// in terms of habits rather than abstinence. Three minutes and forty seconds
+// of tennis highlights on 11 Oct 2026 disqualified a day of reading and Anki
+// under a zero-tolerance reading, and took a 72-day streak with it. A quarter
+// of an hour is short enough that it cannot be a sit-down session and long
+// enough to cover a clip or two.
+const VACATION_SCREEN_LIMIT_MIN = 15;
+
 // A day away from the desk rather than a day off. YouTube and series are the
-// sit-down habits; a day with neither is a day travelling, and the minutes
-// threshold is the wrong question to ask of it. What is asked instead is
-// whether the day still did the work that travels: reading in both languages,
-// and the French deck reviewed.
+// sit-down habits; a day with no real amount of either is a day travelling,
+// and the minutes threshold is the wrong question to ask of it. What is asked
+// instead is whether the day still did the work that travels: reading in both
+// languages, and the French deck reviewed.
 //
-// Podcasts don't disqualify a day — they travel too. Anything the type field
-// doesn't recognise counts as YouTube (normType), so an unexpected row ends
-// the vacation rather than quietly extending a streak.
-function vacationDay(rows) {
+// Podcasts don't count toward the screen limit — they travel too. Anything
+// the type field doesn't recognise counts as YouTube (normType), so an
+// unexpected row eats into the allowance rather than being waved through.
+function vacationDay(rows, screenLimitMin = VACATION_SCREEN_LIMIT_MIN) {
   if (!rows || !rows.length) return false;
-  if (rows.some((s) => normType(s) === 'youtube' || normType(s) === 'series')) return false;
+  const screenMinutes = rows
+    .filter((s) => normType(s) === 'youtube' || normType(s) === 'series')
+    .reduce((sum, s) => sum + s.seconds / 60, 0);
+  if (screenMinutes > screenLimitMin) return false;
   const has = (type, lang) => rows.some((s) => normType(s) === type && sessionLang(s) === lang);
   return has('reading', 'fr') && has('reading', 'en') && has('anki', 'fr');
 }
@@ -428,7 +440,7 @@ if (typeof module !== 'undefined') {
     videoIdFromUrl, normShow, contentLinks, doneItemIds,
     withDoneAt, compareWatchlist, doneAtLabel,
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
-    vacationDay,
+    vacationDay, VACATION_SCREEN_LIMIT_MIN,
     STREAK_GOAL_HISTORY, streakThreshold, goalStreak,
   };
 }

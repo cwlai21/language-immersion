@@ -90,10 +90,13 @@ and a quick manual-entry form (for podcasts listened outside the browser).
   languages (the goal in force on that date — 30 min before 2026-08-08, 60
   after). Today falling short doesn't break it: an in-progress day counts from
   yesterday rather than reading as a reset.
-- **Travelling days** are judged differently. A day with no YouTube and no
-  series sessions is a day away from the desk, and it holds the streak if both
-  languages have a reading session and the French deck was reviewed —
-  regardless of minutes. Podcasts don't disqualify a day; they travel too. A
+- **Travelling days** are judged differently. A day with no real amount of
+  YouTube or series (under 15 minutes of the two together) is a day away from
+  the desk, and it holds the streak if both languages have a reading session
+  and the French deck was reviewed — regardless of minutes. The allowance is
+  not zero on purpose: away from the desk you still open the odd clip, and
+  3m40s of tennis highlights once cost a 72-day streak. Podcasts don't count
+  toward it; they travel too. A
   day with nothing at all still breaks the streak: vacation is not absence.
   The goal ring on the dashboard and in the popup follows the same rule, and
   says which of the two happened — "Jour de voyage — série maintenue ✈️"
