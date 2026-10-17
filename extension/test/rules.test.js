@@ -13,7 +13,7 @@ const {
   withDoneAt, compareWatchlist, doneAtLabel,
   assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
   streakThreshold, goalStreak,
-  MONTHLY_BREAK_ALLOWANCE, breaksUsed,
+  MONTHLY_BREAK_ALLOWANCE,
   legacyWatchKey,
   migrateWatchKeys,
 
@@ -343,15 +343,6 @@ test('a travelling day is earned and counts; a forgiven day is not and does not'
   const sessions = [...travelling('2026-10-11'), ...travelling('2026-10-10')];
   // Both days travelled: both counted.
   assert.equal(goalStreak(sessions, 'all', new Date('2026-10-11T12:00:00')), 2);
-});
-
-test('breaksUsed reports what the month has spent, ignoring today', () => {
-  const sessions = ['2026-08-20', '2026-08-19', '2026-08-17'].map(did);
-  // The 18th is missed; today (the 20th) is not counted either way.
-  assert.equal(breaksUsed(sessions, 'fr', NOW, flat(30)), 1);
-  // Never reports more than the allowance, however many days are missing.
-  const sparse = [did('2026-08-20'), did('2026-08-10')];
-  assert.equal(breaksUsed(sparse, 'fr', NOW, flat(30)), MONTHLY_BREAK_ALLOWANCE);
 });
 
 test('goalStreak judges each day against the goal in effect that day (real history)', () => {

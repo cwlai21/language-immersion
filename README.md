@@ -107,8 +107,9 @@ and a quick manual-entry form (for podcasts listened outside the browser).
   where two breaks on the 31st and two on the 1st are all forgiven.
 - A forgiven day **holds the chain but never counts**: a ten-day run containing
   one break reads as nine. The number keeps meaning "days I did the work" —
-  unlike a travelling day, which is earned and so does count. The goal-streak
-  card shows what is left ("days goal met · 1 break left").
+  unlike a travelling day, which is earned and so does count. The allowance is
+  deliberately not shown anywhere: it is there to absorb a bad day, not to be
+  budgeted and spent down.
   The goal ring on the dashboard and in the popup follows the same rule, and
   says which of the two happened — "Jour de voyage — série maintenue ✈️"
   rather than claiming a 60-minute goal was hit.

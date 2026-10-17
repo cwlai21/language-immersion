@@ -432,14 +432,8 @@ function render() {
   // the run.
   document.getElementById('statGoalStreak').textContent =
     `${goalStreak(allSessions, langFilter)} 🎯`;
-  // Two missed days a month are forgiven (MONTHLY_BREAK_ALLOWANCE). Showing
-  // what is left turns the allowance into something you can plan around,
-  // rather than a rule you only meet by accidentally surviving a gap.
-  const left = MONTHLY_BREAK_ALLOWANCE - breaksUsed(allSessions, langFilter);
-  const breaks = left === 0 ? t('breaksNone')
-    : `${left} ${t(left === 1 ? 'breakLeft' : 'breaksLeft')}`;
   document.getElementById('statGoalStreakSub').textContent =
-    `${t(langFilter === 'all' ? 'goalStreakSubAll' : 'goalStreakSub')} · ${breaks}`;
+    t(langFilter === 'all' ? 'goalStreakSubAll' : 'goalStreakSub');
   document.getElementById('statWeekAvg').textContent = `${fmtMinutes(stats.weekAvg)} ${t('avgPerDay')}`;
   document.getElementById('statMonthAvg').textContent = `${fmtMinutes(stats.monthAvg)} ${t('avgPerDay')}`;
   document.getElementById('statTotal').textContent = `${fmtMinutes(stats.total)} ${t('totalAllTime')}`;

@@ -476,46 +476,6 @@ function goalStreak(sessions, filter, rawNow = new Date(), thresholdFor = streak
   return streak;
 }
 
-// Breaks already used this calendar month, for the dashboard to show what is
-// left. Counts missed days up to yesterday — today is still in progress and
-// has not spent anything.
-function breaksUsed(sessions, filter, rawNow = new Date(), thresholdFor = streakThreshold) {
-  const today = dateKey(logicalNow(rawNow));
-  const month = breakMonth(today);
-  const byDay = {};
-  for (const s of sessions) {
-    const bucket = byDay[s.date] || (byDay[s.date] = { fr: 0, en: 0, rows: [] });
-    bucket[sessionLang(s)] += s.seconds / 60;
-    bucket.rows.push(s);
-  }
-  let firstDate = null;
-  for (const date in byDay) {
-    if (firstDate === null || date < firstDate) firstDate = date;
-  }
-  if (!firstDate) return 0;
-
-  const met = (date) => {
-    const m = byDay[date];
-    if (!m) return false;
-    if (vacationDay(m.rows)) return true;
-    const threshold = thresholdFor(date);
-    if (filter === 'fr') return m.fr >= threshold;
-    if (filter === 'en') return m.en >= threshold;
-    return m.fr >= threshold && m.en >= threshold;
-  };
-
-  let used = 0;
-  const cursor = logicalNow(rawNow);
-  cursor.setDate(cursor.getDate() - 1); // skip today
-  for (;;) {
-    const date = dateKey(cursor);
-    if (breakMonth(date) !== month || date < firstDate) break;
-    if (!met(date)) used++;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  return Math.min(used, MONTHLY_BREAK_ALLOWANCE);
-}
-
 // Dual browser/Node: a plain <script> tag in dashboard.html defines these as
 // globals (like lang-detect.js); require('./rules.js') in tests gets them
 // via module.exports. Neither environment sees the other's branch.
@@ -530,6 +490,6 @@ if (typeof module !== 'undefined') {
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
     vacationDay, VACATION_SCREEN_LIMIT_MIN,
     STREAK_GOAL_HISTORY, streakThreshold, goalStreak,
-    MONTHLY_BREAK_ALLOWANCE, breakMonth, breaksUsed,
+    MONTHLY_BREAK_ALLOWANCE, breakMonth,
   };
 }
