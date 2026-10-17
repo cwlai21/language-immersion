@@ -13,6 +13,7 @@ const {
   withDoneAt, compareWatchlist, doneAtLabel,
   assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
   streakThreshold, goalStreak,
+  MONTHLY_BREAK_ALLOWANCE, breaksUsed,
   legacyWatchKey,
   migrateWatchKeys,
 
@@ -230,9 +231,21 @@ test('goalStreak counts consecutive days clearing the goal in one language', () 
     { date: '2026-08-20', language: 'fr', seconds: min(40) },
     { date: '2026-08-19', language: 'fr', seconds: min(35) },
     { date: '2026-08-18', language: 'fr', seconds: min(30) }, // exactly the goal counts
-    { date: '2026-08-16', language: 'fr', seconds: min(90) }, // gap on the 17th
+    { date: '2026-08-17', language: 'fr', seconds: min(30) },
   ];
-  assert.equal(goalStreak(sessions, 'fr', NOW, flat(30)), 3);
+  assert.equal(goalStreak(sessions, 'fr', NOW, flat(30)), 4);
+});
+
+test('goalStreak: a gap holds the run but is not itself counted', () => {
+  const sessions = [
+    { date: '2026-08-20', language: 'fr', seconds: min(40) },
+    { date: '2026-08-19', language: 'fr', seconds: min(35) },
+    { date: '2026-08-18', language: 'fr', seconds: min(30) },
+    // nothing on the 17th — forgiven, so the 16th still joins the run...
+    { date: '2026-08-16', language: 'fr', seconds: min(90) },
+  ];
+  // ...but the empty day adds nothing: four days did the work, not five.
+  assert.equal(goalStreak(sessions, 'fr', NOW, flat(30)), 4);
 });
 
 test('goalStreak: an in-progress today below the goal counts from yesterday, not a reset', () => {
@@ -254,13 +267,91 @@ test('goalStreak on the All view requires both languages to clear the goal', () 
   assert.equal(goalStreak(sessions, 'all', NOW, flat(30)), 1);
 });
 
-test('goalStreak treats a day with no listening as a break, never counts empty days', () => {
+test('goalStreak never counts an empty day, even when it forgives one', () => {
   const sessions = [
     { date: '2026-08-20', language: 'fr', seconds: min(40) },
-    // nothing on 2026-08-19
+    // nothing on 2026-08-19 — inside the monthly allowance
     { date: '2026-08-18', language: 'fr', seconds: min(40) },
   ];
+  assert.equal(goalStreak(sessions, 'fr', NOW, flat(30)), 2);
+  // With no allowance at all the gap is fatal, as it used to be.
+  assert.equal(goalStreak(sessions, 'fr', NOW, flat(30), 0), 1);
+});
+
+/* ── The monthly break allowance: two missed days a month are forgiven, hold
+   the chain, and never count toward the number. ── */
+
+// A day that clears a flat 30-minute goal.
+const did = (date) => ({ date, language: 'fr', seconds: min(40) });
+
+test('two missed days in a month are forgiven, a third ends the run', () => {
+  // 20th back to 14th, with the 18th and 16th missed — two breaks, both inside
+  // the allowance, so the run reaches the 14th.
+  const twoGaps = ['2026-08-20', '2026-08-19', '2026-08-17', '2026-08-15', '2026-08-14'].map(did);
+  assert.equal(goalStreak(twoGaps, 'fr', NOW, flat(30)), 5);
+
+  // Move that last day back to the 13th and the 14th becomes a third break.
+  // The allowance is spent, so the run stops there: 20, 19, 17, 15 — four days,
+  // and the 13th never joins however much work it holds.
+  const threeGaps = ['2026-08-20', '2026-08-19', '2026-08-17', '2026-08-15', '2026-08-13'].map(did);
+  assert.equal(goalStreak(threeGaps, 'fr', NOW, flat(30)), 4);
+});
+
+test('the allowance is per calendar month, so a new month restores it', () => {
+  // Two breaks in August (the 18th and 16th) exhaust that month. Crossing into
+  // July the budget is fresh, so the gap on 31 July is forgiven too.
+  const sessions = ['2026-08-20', '2026-08-19', '2026-08-17', '2026-08-15',
+                    '2026-08-02', '2026-08-01', '2026-07-30'].map(did);
+  // Aug 14..03 are all missing, which blows the August allowance long before
+  // July is reached — the run stops inside August.
+  assert.equal(goalStreak(sessions, 'fr', NOW, flat(30)), 4);
+
+  // With the August days contiguous, the month boundary is actually reached.
+  const upToBoundary = [];
+  for (let d = 20; d >= 1; d--) upToBoundary.push(did(`2026-08-${String(d).padStart(2, '0')}`));
+  upToBoundary.push(did('2026-07-30')); // 31 July missing — forgiven by July's budget
+  assert.equal(goalStreak(upToBoundary, 'fr', NOW, flat(30)), 21);
+});
+
+test('a missed day is forgiven only once, not re-forgiven on every step back', () => {
+  // Two consecutive empty days (18th, 17th) use both of August's breaks.
+  const sessions = ['2026-08-20', '2026-08-19', '2026-08-16'].map(did);
+  assert.equal(goalStreak(sessions, 'fr', NOW, flat(30)), 3);
+  // A third consecutive empty day has nothing left to spend.
+  const deeper = ['2026-08-20', '2026-08-19', '2026-08-15'].map(did);
+  assert.equal(goalStreak(deeper, 'fr', NOW, flat(30)), 2);
+});
+
+test('an in-progress today is skipped, never charged to the allowance', () => {
+  // Today is short, and the two days before it are empty. If today had spent a
+  // break there would be only one left and the run would stop at the 19th.
+  const sessions = [
+    { date: '2026-08-20', language: 'fr', seconds: min(5) }, // today, not there yet
+    did('2026-08-17'),
+  ];
   assert.equal(goalStreak(sessions, 'fr', NOW, flat(30)), 1);
+});
+
+test('the walk does not forgive its way past the first tracked day', () => {
+  // One lone day at the start of tracking: nothing before it is a "break",
+  // it is simply before the beginning.
+  const sessions = [did('2026-08-20')];
+  assert.equal(goalStreak(sessions, 'fr', NOW, flat(30)), 1);
+});
+
+test('a travelling day is earned and counts; a forgiven day is not and does not', () => {
+  const sessions = [...travelling('2026-10-11'), ...travelling('2026-10-10')];
+  // Both days travelled: both counted.
+  assert.equal(goalStreak(sessions, 'all', new Date('2026-10-11T12:00:00')), 2);
+});
+
+test('breaksUsed reports what the month has spent, ignoring today', () => {
+  const sessions = ['2026-08-20', '2026-08-19', '2026-08-17'].map(did);
+  // The 18th is missed; today (the 20th) is not counted either way.
+  assert.equal(breaksUsed(sessions, 'fr', NOW, flat(30)), 1);
+  // Never reports more than the allowance, however many days are missing.
+  const sparse = [did('2026-08-20'), did('2026-08-10')];
+  assert.equal(breaksUsed(sparse, 'fr', NOW, flat(30)), MONTHLY_BREAK_ALLOWANCE);
 });
 
 test('goalStreak judges each day against the goal in effect that day (real history)', () => {
@@ -705,9 +796,15 @@ test('a travelling day bridges two ordinary days instead of breaking the run', (
   assert.equal(goalStreak(sessions, 'all', new Date('2026-10-11T12:00:00')), 3);
 });
 
-test('an empty day still breaks the streak — vacation is not absence', () => {
+test('an empty day is forgiven, but still never counts — vacation is not absence', () => {
   const sessions = [...travelling('2026-10-11'), ...travelling('2026-10-09')];
-  assert.equal(goalStreak(sessions, 'all', new Date('2026-10-11T12:00:00')), 1);
+  // The 10th is empty: forgiven, so the 9th still joins the run. Two days
+  // travelled, two days counted.
+  assert.equal(goalStreak(sessions, 'all', new Date('2026-10-11T12:00:00')), 2);
+  // A travelling day is earned, an empty one is only tolerated: with the
+  // allowance spent, the distinction is the old one again.
+  assert.equal(goalStreak(sessions, 'all', new Date('2026-10-11T12:00:00'),
+                          undefined, 0), 1);
 });
 
 test('the goal ring agrees with the streak on a travelling day', () => {

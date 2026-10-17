@@ -393,14 +393,40 @@ function vacationDay(rows, screenLimitMin = VACATION_SCREEN_LIMIT_MIN) {
   return has('reading', 'fr') && has('reading', 'en') && has('anki', 'fr');
 }
 
+// Two missed days a month are forgiven. A travelling day already holds the
+// streak, but only because real work happened on it — reading in both
+// languages and the French deck. That leaves no room for a day that is simply
+// a day off: ill, a long flight, a birthday. Zero tolerance for those makes
+// the streak a record of luck as much as habit, and the only way to protect a
+// long run becomes never living a normal life.
+//
+// Two is deliberately small. It is enough to survive a bad week without being
+// enough to coast: a third missed day in the same month still ends the run.
+const MONTHLY_BREAK_ALLOWANCE = 2;
+
+// Calendar month, resetting on the 1st — the allowance is meant to be countable
+// in your head ("I've used one this month"), which a rolling window is not.
+// The cost is a seam at month end: two breaks on the 31st and two on the 1st
+// are all forgiven. That is accepted as the price of a rule you can predict.
+function breakMonth(date) {
+  return date.slice(0, 7); // YYYY-MM
+}
+
 // How many days in a row the goal has been met, counting back from today.
 // `filter` follows the dashboard's language filter: 'fr'/'en' check that one
 // language; 'all' requires *both* languages to clear the goal that day. Today
 // not yet meeting it doesn't break the streak — like the plain day streak, it
 // counts from yesterday in that case, so an in-progress day never reads as a
 // reset. Each day is judged against the goal active on that date (see
-// streakThreshold). `now` and `thresholdFor` are injectable for tests.
-function goalStreak(sessions, filter, rawNow = new Date(), thresholdFor = streakThreshold) {
+// streakThreshold).
+//
+// A missed day inside the monthly allowance holds the chain but does NOT add
+// to the count: the number keeps meaning "days I did the work". A run of ten
+// days containing one break reads as nine, not ten.
+//
+// `now`, `thresholdFor` and `allowance` are injectable for tests.
+function goalStreak(sessions, filter, rawNow = new Date(), thresholdFor = streakThreshold,
+                    allowance = MONTHLY_BREAK_ALLOWANCE) {
   const byDay = {}; // { date: { fr: minutes, en: minutes, rows } }
   for (const s of sessions) {
     const bucket = byDay[s.date] || (byDay[s.date] = { fr: 0, en: 0, rows: [] });
@@ -418,14 +444,76 @@ function goalStreak(sessions, filter, rawNow = new Date(), thresholdFor = streak
     if (filter === 'en') return m.en >= threshold;
     return m.fr >= threshold && m.en >= threshold;
   };
+
+  // Nothing before the first tracked day is a break — it is prehistory. Without
+  // this the walk would forgive its way two days past the very first session
+  // and report a streak that began before any listening did.
+  let firstDate = null;
+  for (const date in byDay) {
+    if (firstDate === null || date < firstDate) firstDate = date;
+  }
+
+  const spent = {}; // { 'YYYY-MM': days forgiven so far }
+  const forgive = (date) => {
+    if (!firstDate || date < firstDate) return false;
+    const m = breakMonth(date);
+    if ((spent[m] || 0) >= allowance) return false;
+    spent[m] = (spent[m] || 0) + 1;
+    return true;
+  };
+
   let streak = 0;
   const cursor = logicalNow(rawNow);
+  // An in-progress today is skipped, not forgiven: it has not failed yet, so
+  // it must not cost one of the month's two breaks.
   if (!met(dateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
-  while (met(dateKey(cursor))) {
-    streak++;
+  for (;;) {
+    const date = dateKey(cursor);
+    if (met(date)) streak++;
+    else if (!forgive(date)) break;
     cursor.setDate(cursor.getDate() - 1);
   }
   return streak;
+}
+
+// Breaks already used this calendar month, for the dashboard to show what is
+// left. Counts missed days up to yesterday — today is still in progress and
+// has not spent anything.
+function breaksUsed(sessions, filter, rawNow = new Date(), thresholdFor = streakThreshold) {
+  const today = dateKey(logicalNow(rawNow));
+  const month = breakMonth(today);
+  const byDay = {};
+  for (const s of sessions) {
+    const bucket = byDay[s.date] || (byDay[s.date] = { fr: 0, en: 0, rows: [] });
+    bucket[sessionLang(s)] += s.seconds / 60;
+    bucket.rows.push(s);
+  }
+  let firstDate = null;
+  for (const date in byDay) {
+    if (firstDate === null || date < firstDate) firstDate = date;
+  }
+  if (!firstDate) return 0;
+
+  const met = (date) => {
+    const m = byDay[date];
+    if (!m) return false;
+    if (vacationDay(m.rows)) return true;
+    const threshold = thresholdFor(date);
+    if (filter === 'fr') return m.fr >= threshold;
+    if (filter === 'en') return m.en >= threshold;
+    return m.fr >= threshold && m.en >= threshold;
+  };
+
+  let used = 0;
+  const cursor = logicalNow(rawNow);
+  cursor.setDate(cursor.getDate() - 1); // skip today
+  for (;;) {
+    const date = dateKey(cursor);
+    if (breakMonth(date) !== month || date < firstDate) break;
+    if (!met(date)) used++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return Math.min(used, MONTHLY_BREAK_ALLOWANCE);
 }
 
 // Dual browser/Node: a plain <script> tag in dashboard.html defines these as
@@ -442,5 +530,6 @@ if (typeof module !== 'undefined') {
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
     vacationDay, VACATION_SCREEN_LIMIT_MIN,
     STREAK_GOAL_HISTORY, streakThreshold, goalStreak,
+    MONTHLY_BREAK_ALLOWANCE, breakMonth, breaksUsed,
   };
 }
