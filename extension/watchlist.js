@@ -37,12 +37,19 @@ async function saveTodo(mutate) {
   } catch { /* offline — localStorage keeps it until the next save */ }
 }
 
+// Frozen at the first render, reset only by reloading the page.
+let pinnedOrder = null;
+
 function render() {
   const list = document.getElementById('list');
   list.innerHTML = '';
   // Still to watch first, then finished with the most recently finished on
-  // top — compareWatchlist in rules.js, where it is covered by tests.
-  const items = Object.values(todo).sort(compareWatchlist);
+  // top — but only on the first draw. After that the order is held still so a
+  // tick cannot move the row under the cursor; orderWatchlist in rules.js,
+  // where it is covered by tests.
+  const ordered = orderWatchlist(Object.values(todo), pinnedOrder);
+  const items = ordered.items;
+  pinnedOrder = ordered.order;
   const doneCount = items.filter((i) => i.done).length;
   document.getElementById('count').textContent =
     items.length ? `${items.length - doneCount} à regarder · ${items.length} en tout` : '';

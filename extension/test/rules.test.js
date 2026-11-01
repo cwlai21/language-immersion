@@ -10,7 +10,7 @@ const {
   minutesByDate, computeStats,
   sessionLang, normType, watchKey, sessionWatchKeys, startsDone,
   videoIdFromUrl, normShow, contentLinks, doneItemIds,
-  withDoneAt, compareWatchlist, doneAtLabel,
+  withDoneAt, compareWatchlist, orderWatchlist, doneAtLabel,
   assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
   streakThreshold, goalStreak,
   MONTHLY_BREAK_ALLOWANCE,
@@ -218,6 +218,58 @@ test('streakThreshold follows the goal history: 30 before 2026-08-08, 60 after',
   assert.equal(streakThreshold('2026-08-08'), 60); // raise takes effect that day
   assert.equal(streakThreshold('2026-08-20'), 60);
   assert.equal(streakThreshold('2026-01-01'), 30);
+});
+
+/* ── orderWatchlist: the drawn order, frozen after the first draw so a tick
+   cannot move the row under the cursor. ── */
+const wl = (videoId, done, addedAt, doneAt) =>
+  ({ videoId, done, addedAt, ...(doneAt ? { doneAt } : {}) });
+
+test('the first draw is the plain sort: unwatched first, newest first', () => {
+  const items = [wl('old', false, 1), wl('new', false, 3), wl('seen', true, 2, 9)];
+  const { items: drawn, order } = orderWatchlist(items, null);
+  assert.deepEqual(drawn.map((i) => i.videoId), ['new', 'old', 'seen']);
+  assert.deepEqual(order, ['new', 'old', 'seen']);
+});
+
+test('ticking a row does not move it — the whole point', () => {
+  const items = [wl('a', false, 3), wl('b', false, 2), wl('c', false, 1)];
+  const first = orderWatchlist(items, null);
+  assert.deepEqual(first.items.map((i) => i.videoId), ['a', 'b', 'c']);
+
+  // 'a' is ticked; the plain sort would drop it to the bottom.
+  const ticked = [wl('a', true, 3, 100), wl('b', false, 2), wl('c', false, 1)];
+  assert.deepEqual([...ticked].sort(compareWatchlist).map((i) => i.videoId),
+    ['b', 'c', 'a'], 'the sort really would move it');
+
+  const second = orderWatchlist(ticked, first.order);
+  assert.deepEqual(second.items.map((i) => i.videoId), ['a', 'b', 'c'],
+    'but the drawn order holds it in place');
+});
+
+test('a video arriving from the playlist sync goes to the top, then pins too', () => {
+  const first = orderWatchlist([wl('a', false, 2), wl('b', false, 1)], null);
+  const withNew = [wl('a', false, 2), wl('b', false, 1), wl('fresh', false, 9)];
+  const second = orderWatchlist(withNew, first.order);
+  assert.deepEqual(second.items.map((i) => i.videoId), ['fresh', 'a', 'b']);
+
+  // Ticking the newcomer leaves it where it is, like anything else.
+  const ticked = [wl('a', false, 2), wl('b', false, 1), wl('fresh', true, 9, 50)];
+  const third = orderWatchlist(ticked, second.order);
+  assert.deepEqual(third.items.map((i) => i.videoId), ['fresh', 'a', 'b']);
+});
+
+test('a removed video drops out of the order instead of accumulating', () => {
+  const first = orderWatchlist([wl('a', false, 2), wl('b', false, 1)], null);
+  const second = orderWatchlist([wl('a', false, 2)], first.order);
+  assert.deepEqual(second.order, ['a']);
+});
+
+test('reloading the page re-sorts: passing no order starts fresh', () => {
+  const ticked = [wl('a', true, 3, 100), wl('b', false, 2), wl('c', false, 1)];
+  const reload = orderWatchlist(ticked, null);
+  assert.deepEqual(reload.items.map((i) => i.videoId), ['b', 'c', 'a'],
+    'the tick is honoured once the page is reloaded');
 });
 
 /* ── goalStreak: consecutive days meeting that day's goal. The counting/

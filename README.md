@@ -90,6 +90,12 @@ and a quick manual-entry form (for podcasts listened outside the browser).
   languages (the goal in force on that date — 30 min before 2026-08-08, 60
   after). Today falling short doesn't break it: an in-progress day counts from
   yesterday rather than reading as a reset.
+- The **À regarder** list sorts unwatched first, then most-recently-finished —
+  but only when the page loads. Ticking a video restyles its row where it
+  stands instead of dropping it to the bottom, because the list re-renders on
+  every tick and the row under the cursor used to be replaced mid-click. That
+  cost a wrongly-ticked video on 17 Oct. Videos arriving from the playlist sync
+  go to the top; reloading re-sorts everything.
 - **Travelling days** are judged differently. A day with no real amount of
   YouTube or series (under 15 minutes of the two together) is a day away from
   the desk, and it holds the streak if both languages have a reading session

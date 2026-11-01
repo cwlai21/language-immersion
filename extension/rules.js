@@ -50,6 +50,40 @@ function compareWatchlist(a, b) {
   return (b.addedAt || 0) - (a.addedAt || 0);
 }
 
+// The order the list is actually drawn in, which is not the sort order after
+// the first draw.
+//
+// compareWatchlist sends a ticked video to the bottom, and the list re-renders
+// on every tick — so the row under the cursor was replaced the instant you
+// clicked, and the next click landed on whatever slid up into its place. On
+// 17 Oct that ticked a Corentin Mercadal video that had never been watched,
+// two minutes before the one actually being aimed at.
+//
+// So the order is frozen at the first draw and reused: a tick restyles its row
+// where it stands and nothing moves until the page is reloaded, which is when
+// a reshuffle is expected and harmless. Videos arriving from the playlist sync
+// meanwhile go to the top, where compareWatchlist would put them anyway (newest
+// addedAt first), and are themselves pinned from then on.
+//
+// `pinned` is the order returned by the previous call, or null/[] for the first
+// draw. Returns the items to draw and the order to pass back next time; ids
+// that have gone are dropped, so the list cannot grow forever.
+function orderWatchlist(items, pinned) {
+  const sorted = [...(items || [])].sort(compareWatchlist);
+  if (!pinned || !pinned.length) {
+    return { items: sorted, order: sorted.map((i) => i.videoId) };
+  }
+  const rank = new Map(pinned.map((id, i) => [id, i]));
+  const known = [];
+  const fresh = [];
+  for (const item of sorted) {
+    (rank.has(item.videoId) ? known : fresh).push(item);
+  }
+  known.sort((a, b) => rank.get(a.videoId) - rank.get(b.videoId));
+  const out = [...fresh, ...known];
+  return { items: out, order: out.map((i) => i.videoId) };
+}
+
 // When a video was finished, for the list: "aujourd'hui", "hier", or a short
 // date. Bucketed on the tracker's 4am day like everything else, so finishing
 // something at 2am reads as last night rather than today.
@@ -486,7 +520,7 @@ if (typeof module !== 'undefined') {
     sessionLang, KNOWN_TYPES, normType, TODO_TYPES, watchKey, legacyWatchKey, migrateWatchKeys,
     sessionWatchKeys, startsDone,
     videoIdFromUrl, normShow, contentLinks, doneItemIds,
-    withDoneAt, compareWatchlist, doneAtLabel,
+    withDoneAt, compareWatchlist, orderWatchlist, doneAtLabel,
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
     vacationDay, VACATION_SCREEN_LIMIT_MIN,
     STREAK_GOAL_HISTORY, streakThreshold, goalStreak,
