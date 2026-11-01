@@ -518,20 +518,32 @@ function sessionRowFields(rows) {
   const imported = rows.some((r) => r.source === 'import');
 
   const totalSeconds = rows.reduce((sum, r) => sum + r.seconds, 0);
-  // A single combined total across days hides how it's actually split —
-  // e.g. "55m" for a podcast episode listened to in a 37m sitting one day
-  // and an 18m sitting the next reads as one continuous block. Show each
-  // day's own total instead, oldest first (matching the date range above).
-  let durationText;
-  if (dates.length > 1) {
-    const byDate = {};
-    for (const r of rows) byDate[r.date] = (byDate[r.date] || 0) + r.seconds;
-    durationText = dates.map((d) => fmtMinutes(byDate[d] / 60)).join(' + ');
-  } else {
-    durationText = fmtMinutes(totalSeconds / 60);
-  }
 
-  return { s, title, dateText, timeText, channel: s.channel || '', auto, imported, durationText, totalSeconds };
+  // Two readings of the same duration, for two different audiences.
+  //
+  // durationByDay is every day's own total, oldest first. A bare combined
+  // total would hide how the time was actually split — "55m" for a podcast
+  // heard in a 37m sitting and an 18m one reads as a single block — so this
+  // is what the CSV carries, where the split is the data.
+  //
+  // durationText is what the list shows. The by-day form does not survive
+  // contact with a book: Campus Drivers: Supermad spent eleven days in one
+  // row and rendered as "55m + 41m + 26m + 9m + 39m + 31m + 27m + 17m + 44m
+  // + 7m + 17m", which is unreadable and looks like something is wrong.
+  // Naming the day count keeps the one thing the bare total loses — that the
+  // time is not continuous — in four words instead of eleven numbers. The
+  // by-day form is still there, as the cell's tooltip.
+  const byDate = {};
+  for (const r of rows) byDate[r.date] = (byDate[r.date] || 0) + r.seconds;
+  const durationByDay = dates.map((d) => fmtMinutes(byDate[d] / 60)).join(' + ');
+  const durationText = dates.length > 1
+    ? `${fmtMinutes(totalSeconds / 60)} ${t('overNDays').replace('%n', dates.length)}`
+    : fmtMinutes(totalSeconds / 60);
+
+  return {
+    s, title, dateText, timeText, channel: s.channel || '', auto, imported,
+    durationText, durationByDay, totalSeconds,
+  };
 }
 
 // One list item for a group of rows (same content, same day; often length 1).
@@ -600,7 +612,8 @@ function sessionRow(rows) {
   const mins = document.createElement('span');
   mins.className = 'session-mins';
   mins.textContent = fields.durationText;
-  if (fields.durationText.includes(' + ')) mins.title = `${fmtMinutes(fields.totalSeconds / 60)} total`;
+  // The per-day split, for when the summary is not enough.
+  if (fields.durationByDay !== fields.durationText) mins.title = fields.durationByDay;
 
   // Editable whether or not the rows are merged. A title is what groups them,
   // so a typo in one always produces a multi-row group — refusing to edit
@@ -843,7 +856,7 @@ document.getElementById('exportBtn').addEventListener('click', () => {
           f.timeText,
           csvCell(f.channel),
           flags,
-          f.durationText,
+          f.durationByDay,
         ]);
       }
     }
