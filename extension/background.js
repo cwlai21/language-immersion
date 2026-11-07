@@ -572,7 +572,9 @@ async function ytListPlaylist(playlistId, token) {
 
 // videoId → length in seconds, for the videos we're about to import. `videos`
 // costs 1 quota unit per call (up to 50 ids), same as listing the playlist.
-// A failed chunk just leaves those durations unknown — the list still works.
+// An id YouTube answered for maps to its length, or to 0 when it has none
+// (live, deleted). An id whose request failed is left out, so callers store
+// null and the backfill asks again: a 0 there would be final.
 async function ytFetchDurations(videoIds, token) {
   const byId = new Map();
   for (let i = 0; i < videoIds.length; i += 50) {
@@ -581,6 +583,7 @@ async function ytFetchDurations(videoIds, token) {
       const data = await ytApi(
         `videos?part=contentDetails&id=${encodeURIComponent(chunk.join(','))}`, token,
       );
+      for (const id of chunk) byId.set(id, 0);
       for (const v of data.items || []) {
         const sec = parseIsoDuration(v.contentDetails && v.contentDetails.duration);
         if (sec) byId.set(v.id, sec);
@@ -606,10 +609,10 @@ async function ytBackfillDurations(token) {
   const merged = await ytTodoLoad(); // re-read: the import above may have just written
   let filled = 0;
   for (const id of missing) {
-    if (!merged[id]) continue;
-    // Record 0 for the ones YouTube gave no length for (live, deleted), so we
-    // don't re-query them on every single sync.
-    merged[id].durationSec = durations.get(id) || 0;
+    if (!merged[id] || !durations.has(id)) continue;
+    // 0 for the ones YouTube gave no length for (live, deleted), so we don't
+    // re-query them every hour. A failed request leaves null for next time.
+    merged[id].durationSec = durations.get(id);
     filled++;
   }
   if (filled) await ytTodoSave(merged);
@@ -729,7 +732,10 @@ async function syncYoutubeTodo(interactive = false) {
       const tracked = await ytTrackedVideoIds(items.map((i) => i.videoId));
       const seen = { ...(await loadCurrent()), ...allToAdd }; // dedupe across playlists too
       const durations = await ytFetchDurations(items.map((i) => i.videoId), token);
-      for (const it of items) it.durationSec = durations.get(it.videoId) || 0;
+      // null, not 0, when the lookup failed, so the hourly backfill retries it.
+      for (const it of items) {
+        it.durationSec = durations.has(it.videoId) ? durations.get(it.videoId) : null;
+      }
       const { toAdd, removeItemIds } = planYoutubeTodoSync(items, tracked, seen, pl.lang);
       Object.assign(allToAdd, toAdd);
       for (const id of removeItemIds) allRemove.push(id);
