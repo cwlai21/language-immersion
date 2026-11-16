@@ -330,28 +330,28 @@ test('goalStreak never counts an empty day, even when it forgives one', () => {
   assert.equal(goalStreak(sessions, 'fr', NOW, flat(30), 0), 1);
 });
 
-/* ── The monthly break allowance: two missed days a month are forgiven, hold
+/* ── The monthly break allowance: three missed days a month are forgiven, hold
    the chain, and never count toward the number. ── */
 
 // A day that clears a flat 30-minute goal.
 const did = (date) => ({ date, language: 'fr', seconds: min(40) });
 
-test('two missed days in a month are forgiven, a third ends the run', () => {
-  // 20th back to 14th, with the 18th and 16th missed — two breaks, both inside
-  // the allowance, so the run reaches the 14th.
-  const twoGaps = ['2026-08-20', '2026-08-19', '2026-08-17', '2026-08-15', '2026-08-14'].map(did);
-  assert.equal(goalStreak(twoGaps, 'fr', NOW, flat(30)), 5);
+test('three missed days in a month are forgiven, a fourth ends the run', () => {
+  // 20th back to 12th, with the 18th, 16th and 14th missed — three breaks, all
+  // inside the allowance, so the run reaches the 12th.
+  const threeGaps = ['2026-08-20', '2026-08-19', '2026-08-17', '2026-08-15', '2026-08-13', '2026-08-12'].map(did);
+  assert.equal(goalStreak(threeGaps, 'fr', NOW, flat(30)), 6);
 
-  // Move that last day back to the 13th and the 14th becomes a third break.
-  // The allowance is spent, so the run stops there: 20, 19, 17, 15 — four days,
-  // and the 13th never joins however much work it holds.
-  const threeGaps = ['2026-08-20', '2026-08-19', '2026-08-17', '2026-08-15', '2026-08-13'].map(did);
-  assert.equal(goalStreak(threeGaps, 'fr', NOW, flat(30)), 4);
+  // Move that last day back to the 11th and the 12th becomes a fourth break.
+  // The allowance is spent, so the run stops there: 20, 19, 17, 15, 13 — five
+  // days, and the 11th never joins however much work it holds.
+  const fourGaps = ['2026-08-20', '2026-08-19', '2026-08-17', '2026-08-15', '2026-08-13', '2026-08-11'].map(did);
+  assert.equal(goalStreak(fourGaps, 'fr', NOW, flat(30)), 5);
 });
 
 test('the allowance is per calendar month, so a new month restores it', () => {
-  // Two breaks in August (the 18th and 16th) exhaust that month. Crossing into
-  // July the budget is fresh, so the gap on 31 July is forgiven too.
+  // Crossing into July the budget is fresh, so the gap on 31 July is forgiven
+  // whatever August spent.
   const sessions = ['2026-08-20', '2026-08-19', '2026-08-17', '2026-08-15',
                     '2026-08-02', '2026-08-01', '2026-07-30'].map(did);
   // Aug 14..03 are all missing, which blows the August allowance long before
@@ -366,20 +366,20 @@ test('the allowance is per calendar month, so a new month restores it', () => {
 });
 
 test('a missed day is forgiven only once, not re-forgiven on every step back', () => {
-  // Two consecutive empty days (18th, 17th) use both of August's breaks.
-  const sessions = ['2026-08-20', '2026-08-19', '2026-08-16'].map(did);
+  // Three consecutive empty days (18th, 17th, 16th) use all of August's breaks.
+  const sessions = ['2026-08-20', '2026-08-19', '2026-08-15'].map(did);
   assert.equal(goalStreak(sessions, 'fr', NOW, flat(30)), 3);
-  // A third consecutive empty day has nothing left to spend.
-  const deeper = ['2026-08-20', '2026-08-19', '2026-08-15'].map(did);
+  // A fourth consecutive empty day has nothing left to spend.
+  const deeper = ['2026-08-20', '2026-08-19', '2026-08-14'].map(did);
   assert.equal(goalStreak(deeper, 'fr', NOW, flat(30)), 2);
 });
 
 test('an in-progress today is skipped, never charged to the allowance', () => {
-  // Today is short, and the two days before it are empty. If today had spent a
-  // break there would be only one left and the run would stop at the 19th.
+  // Today is short, and the three days before it are empty. If today had spent
+  // a break there would be only two left and the run would stop at the 18th.
   const sessions = [
     { date: '2026-08-20', language: 'fr', seconds: min(5) }, // today, not there yet
-    did('2026-08-17'),
+    did('2026-08-16'),
   ];
   assert.equal(goalStreak(sessions, 'fr', NOW, flat(30)), 1);
 });

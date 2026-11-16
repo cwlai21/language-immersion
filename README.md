@@ -103,14 +103,15 @@ and a quick manual-entry form (for podcasts listened outside the browser).
   not zero on purpose: away from the desk you still open the odd clip, and
   3m40s of tennis highlights once cost a 72-day streak. Podcasts don't count
   toward it; they travel too.
-- **Two missed days a month are forgiven.** A travelling day holds the streak
+- **Three missed days a month are forgiven.** A travelling day holds the streak
   because real work happened on it; that leaves no room for a day that is
   simply a day off — ill, a long flight, a birthday. Zero tolerance makes the
-  streak a record of luck as much as habit. Two is small on purpose: enough to
-  survive a bad week, not enough to coast, and a third missed day in the same
-  month still ends the run. The allowance is per calendar month and resets on
+  streak a record of luck as much as habit. Three is small on purpose: enough
+  to survive a bad week, not enough to coast, and a fourth missed day in the
+  same month still ends the run. The allowance is per calendar month and resets on
   the 1st, so it stays countable in your head; the cost is a seam at month end,
-  where two breaks on the 31st and two on the 1st are all forgiven.
+  where breaks at the end of one month and the start of the next are all
+  forgiven.
 - A forgiven day **holds the chain but never counts**: a ten-day run containing
   one break reads as nine. The number keeps meaning "days I did the work" —
   unlike a travelling day, which is earned and so does count. The allowance is

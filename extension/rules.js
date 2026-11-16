@@ -427,21 +427,25 @@ function vacationDay(rows, screenLimitMin = VACATION_SCREEN_LIMIT_MIN) {
   return has('reading', 'fr') && has('reading', 'en') && has('anki', 'fr');
 }
 
-// Two missed days a month are forgiven. A travelling day already holds the
+// Three missed days a month are forgiven. A travelling day already holds the
 // streak, but only because real work happened on it — reading in both
 // languages and the French deck. That leaves no room for a day that is simply
 // a day off: ill, a long flight, a birthday. Zero tolerance for those makes
 // the streak a record of luck as much as habit, and the only way to protect a
 // long run becomes never living a normal life.
 //
-// Two is deliberately small. It is enough to survive a bad week without being
-// enough to coast: a third missed day in the same month still ends the run.
-const MONTHLY_BREAK_ALLOWANCE = 2;
+// Three is still small. It was two until a duplicate-row cleanup took out
+// minutes that had been counted twice and left August 2026 with three misses —
+// one of them six seconds of French short — which ended a 99-day run there.
+// Three survives a bad week without being enough to coast: a fourth missed
+// day in the same month still ends the run.
+const MONTHLY_BREAK_ALLOWANCE = 3;
 
 // Calendar month, resetting on the 1st — the allowance is meant to be countable
 // in your head ("I've used one this month"), which a rolling window is not.
-// The cost is a seam at month end: two breaks on the 31st and two on the 1st
-// are all forgiven. That is accepted as the price of a rule you can predict.
+// The cost is a seam at month end: breaks at the end of one month and the
+// start of the next are all forgiven, up to six in a row. That is accepted as
+// the price of a rule you can predict.
 function breakMonth(date) {
   return date.slice(0, 7); // YYYY-MM
 }
@@ -499,7 +503,7 @@ function goalStreak(sessions, filter, rawNow = new Date(), thresholdFor = streak
   let streak = 0;
   const cursor = logicalNow(rawNow);
   // An in-progress today is skipped, not forgiven: it has not failed yet, so
-  // it must not cost one of the month's two breaks.
+  // it must not cost one of the month's breaks.
   if (!met(dateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
   for (;;) {
     const date = dateKey(cursor);
