@@ -194,20 +194,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // async response
 });
 
+// Every handler that reads session state (currentSession, seriesByTab,
+// shortsBuffer, pendingRows), awaits, and writes it back runs through this
+// one queue — see serialize() in session-rules.js for the duplicate rows
+// that interleaving them produced.
+const withSessionLock = serialize();
+
 async function handle(msg, sender) {
   switch (msg.type) {
-    case 'heartbeat':   return onHeartbeat(msg, sender);
-    case 'left-video':  return finalizeCurrent();
+    case 'heartbeat':   return withSessionLock(() => onHeartbeat(msg, sender));
+    case 'left-video':  return withSessionLock(finalizeCurrent);
     case 'get-tracking-status': return getTrackingStatus(msg.tabId);
-    case 'set-override': return setOverride(msg.videoId, msg.value);
+    case 'set-override': return withSessionLock(() => setOverride(msg.videoId, msg.value));
     case 'toggle-channel': return toggleChannel(msg.channelId, msg.channel, msg.lang);
-    case 'sync-now': return syncPending();
+    case 'sync-now': return withSessionLock(syncPending);
     // Runs in the service worker rather than the popup because the popup
     // (and everything running in it, including in-flight fetches) is
     // killed the instant it loses focus — e.g. clicking over to IMDb to
     // check an episode number mid-lookup. The worker survives that.
     case 'tmdb-lookup': return { info: await tmdbLookupEpisode(msg.name, msg.season, msg.episode) };
-    case 'series-heartbeat': return onSeriesHeartbeat(msg, sender);
+    case 'series-heartbeat': return withSessionLock(() => onSeriesHeartbeat(msg, sender));
     case 'set-series-lang': return setSeriesLang(msg.name, msg.lang);
     case 'heal-tab': return healTab(msg.tabId);
     case 'yt-todo-status': return ytTodoStatus();
@@ -480,6 +486,11 @@ async function finalizeSession(session) {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== 'tick') return;
   injectIntoOpenTabs(); // self-heal tabs that lost/never got their scripts
+  await withSessionLock(finalizeIdle);
+  await maybeSyncYoutubeTodo();
+});
+
+async function finalizeIdle() {
   const { currentSession, seriesByTab = {}, pendingRows = [], shortsBuffer = {} } =
     await chrome.storage.local.get(['currentSession', 'seriesByTab', 'pendingRows', 'shortsBuffer']);
 
@@ -503,8 +514,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await flushShortsBuffer(shortsBuffer);
   }
   if (pendingRows.length) await syncPending();
-  await maybeSyncYoutubeTodo();
-});
+}
 
 /* ── YouTube "À regarder" playlist sync ──────────────────────────
  * Reads the configured YouTube playlist, moves every video into the shared

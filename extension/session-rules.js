@@ -54,6 +54,21 @@ function applyHeartbeat(currentSession, heartbeat, now, date) {
   return { session, finalized };
 }
 
+// Returns a runner that executes async tasks strictly one at a time, in call
+// order. The worker's handlers each read state from storage, await (an
+// insert, a TMDB lookup), then write it back — two of them interleaving at
+// those awaits both read the same currentSession before either cleared it,
+// and inserted the same row twice, milliseconds apart. A task that throws
+// rejects its own caller but doesn't stall the ones queued behind it.
+function serialize() {
+  let tail = Promise.resolve();
+  return (task) => {
+    const result = tail.then(task);
+    tail = result.catch(() => {});
+    return result;
+  };
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { applyHeartbeat };
+  module.exports = { applyHeartbeat, serialize };
 }

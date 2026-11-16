@@ -4,7 +4,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { applyHeartbeat } = require('../session-rules.js');
+const { applyHeartbeat, serialize } = require('../session-rules.js');
 
 const NOW = 1_000_000;
 const DATE = '2026-08-20';
@@ -104,4 +104,27 @@ test('applyHeartbeat does not mutate the input session', () => {
   applyHeartbeat(active, { video: vid('A'), seconds: 15, playing: true, decision: track('en') }, NOW, DATE);
   assert.equal(active.seconds, 120);
   assert.equal(active.lastBeat, 500);
+});
+
+/* ── the regression this guards: two events finalizing the same stored
+   session at once (left-video racing the idle tick, or a handover) both read
+   it before either cleared it, and the row was inserted twice ── */
+test('serialize runs overlapping read-modify-write tasks one after another', async () => {
+  const run = serialize();
+  let stored = { seconds: 120 };
+  const inserted = [];
+  const finalize = async () => {
+    const s = stored;
+    await new Promise((r) => setTimeout(r, 5)); // the insert's network await
+    if (s) inserted.push(s);
+    stored = null;
+  };
+  await Promise.all([run(finalize), run(finalize)]);
+  assert.equal(inserted.length, 1);
+});
+
+test('serialize keeps going after a task throws, and still reports the error', async () => {
+  const run = serialize();
+  await assert.rejects(run(async () => { throw new Error('boom'); }), /boom/);
+  assert.equal(await run(async () => 'next'), 'next');
 });
