@@ -69,6 +69,34 @@ function serialize() {
   };
 }
 
+// The ids of rows that are copies of an earlier row, for the weekly sweep to
+// delete. A copy matches its original on every field and was saved less than
+// half its own length later — the same listening can't have happened twice in
+// that time. Half, not the full length: the old one-row-per-minute fragments
+// are identical 60s rows saved 51–60s apart, and each is a real minute. The
+// earliest row of a group is always the one kept.
+const SESSION_FIELDS = ['date', 'seconds', 'language', 'type', 'title', 'channel', 'video_id', 'source', 'season', 'episode'];
+
+function findDuplicateSessions(rows) {
+  const groups = new Map();
+  for (const r of rows) {
+    const key = JSON.stringify(SESSION_FIELDS.map((f) => r[f] ?? null));
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  const dupes = [];
+  for (const group of groups.values()) {
+    group.sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+    let kept = group[0];
+    for (const r of group.slice(1)) {
+      const gapSeconds = (Date.parse(r.created_at) - Date.parse(kept.created_at)) / 1000;
+      if (gapSeconds < r.seconds / 2) dupes.push(r.id);
+      else kept = r;
+    }
+  }
+  return dupes;
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { applyHeartbeat, serialize };
+  module.exports = { applyHeartbeat, serialize, findDuplicateSessions };
 }

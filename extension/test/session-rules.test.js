@@ -4,7 +4,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { applyHeartbeat, serialize } = require('../session-rules.js');
+const { applyHeartbeat, serialize, findDuplicateSessions } = require('../session-rules.js');
 
 const NOW = 1_000_000;
 const DATE = '2026-08-20';
@@ -127,4 +127,55 @@ test('serialize keeps going after a task throws, and still reports the error', a
   const run = serialize();
   await assert.rejects(run(async () => { throw new Error('boom'); }), /boom/);
   assert.equal(await run(async () => 'next'), 'next');
+});
+
+/* ── weekly duplicate sweep: a row saved twice (a race, or a retry of an
+   insert that had in fact landed) is deleted, while the old one-row-per-
+   minute fragments — identical 60s rows ~60s apart, each a real minute —
+   are kept ── */
+const row = (id, created_at, extra = {}) => ({
+  id, created_at, date: '2026-09-24', seconds: 240, language: 'fr', type: 'youtube',
+  title: 'Calanques', channel: 'c', video_id: 'v', source: 'auto', season: null, episode: null, ...extra,
+});
+
+test('an identical row saved milliseconds after its twin is a duplicate; the earliest is kept', () => {
+  const rows = [
+    row('b', '2026-09-24T01:23:23.300+00:00'),
+    row('a', '2026-09-24T01:23:23.000+00:00'),
+  ];
+  assert.deepEqual(findDuplicateSessions(rows), ['b']);
+});
+
+test('a 240s row saved 5s after its twin is a duplicate — nobody watches 240s in 5s', () => {
+  const rows = [row('a', '2026-09-24T01:23:23+00:00'), row('b', '2026-09-24T01:23:28+00:00')];
+  assert.deepEqual(findDuplicateSessions(rows), ['b']);
+});
+
+test('one-minute fragments a minute apart are real time, even with clock jitter', () => {
+  const rows = [
+    row('a', '2026-07-21T17:16:07.0+00:00', { seconds: 60 }),
+    row('b', '2026-07-21T17:17:06.8+00:00', { seconds: 60 }),
+    row('c', '2026-07-21T17:17:58.1+00:00', { seconds: 60 }),
+  ];
+  assert.deepEqual(findDuplicateSessions(rows), []);
+});
+
+test('rows differing in any field are never duplicates of each other', () => {
+  const rows = [
+    row('a', '2026-09-24T01:23:23+00:00'),
+    row('b', '2026-09-24T01:23:23+00:00', { seconds: 241 }),
+    row('c', '2026-09-24T01:23:23+00:00', { language: 'en' }),
+    row('d', '2026-09-24T01:23:23+00:00', { date: '2026-09-25' }),
+  ];
+  assert.deepEqual(findDuplicateSessions(rows), []);
+});
+
+test('several copies of one row are measured against the kept original, not each other', () => {
+  const rows = [
+    row('a', '2026-09-24T01:00:00+00:00'),
+    row('b', '2026-09-24T01:00:01+00:00'),
+    row('c', '2026-09-24T01:00:02+00:00'),
+    row('d', '2026-09-24T02:00:00+00:00'), // a genuine rewatch an hour later
+  ];
+  assert.deepEqual(findDuplicateSessions(rows).sort(), ['b', 'c']);
 });

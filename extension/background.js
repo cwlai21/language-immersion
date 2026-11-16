@@ -488,7 +488,29 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   injectIntoOpenTabs(); // self-heal tabs that lost/never got their scripts
   await withSessionLock(finalizeIdle);
   await maybeSyncYoutubeTodo();
+  await maybeSweepDuplicates();
 });
+
+// Once a week, delete rows saved twice — a finalize race, or a retried insert
+// that had in fact landed. Whole rows by id, exactly like the dashboard's ✕;
+// the earliest copy is kept, so no watch-todo group loses its last row.
+// Both laptops may sweep: they pick the same copies, and deleting an id
+// that's already gone is a no-op.
+const DEDUPE_EVERY_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function maybeSweepDuplicates() {
+  const { lastDedupeAt = 0 } = await chrome.storage.local.get('lastDedupeAt');
+  if (Date.now() - lastDedupeAt < DEDUPE_EVERY_MS) return;
+  try {
+    const rows = await sb.listSessions('select=*&order=created_at.asc,id.asc');
+    const dupes = findDuplicateSessions(rows);
+    for (const id of dupes) await sb.deleteSession(id);
+    if (dupes.length) console.log(`[ecoute] weekly sweep deleted ${dupes.length} duplicate session(s)`, dupes);
+    await chrome.storage.local.set({ lastDedupeAt: Date.now() });
+  } catch (e) {
+    console.warn('Duplicate sweep failed, retrying next tick:', e); // offline — lastDedupeAt untouched
+  }
+}
 
 async function finalizeIdle() {
   const { currentSession, seriesByTab = {}, pendingRows = [], shortsBuffer = {} } =
