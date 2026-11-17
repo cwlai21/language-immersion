@@ -245,6 +245,23 @@ function normShow(name) {
     .trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// The first date a series episode was already logged on, or null. The popup
+// asks before a hand-typed episode goes in a second time: Chicago P.D S9E16–18
+// were entered on 15 Nov 2026 and again on the 17th, two hours counted twice.
+// The show name compares loosely (normShow), and a missing season reads as 1,
+// since single-season shows carry no season marker.
+function episodeLoggedOn(rows, { channel, season, episode }) {
+  if (!episode) return null;
+  const show = normShow(channel);
+  let first = null;
+  for (const r of rows) {
+    if (r.type !== 'series' || r.episode !== episode) continue;
+    if ((r.season || 1) !== (season || 1) || normShow(r.channel) !== show) continue;
+    if (first === null || r.date < first) first = r.date;
+  }
+  return first;
+}
+
 // What a curated item can be matched by. Both are lists because an item may
 // legitimately be neither (a search link — nothing to match, and that is not
 // an error) or, later, more than one.
@@ -523,7 +540,7 @@ if (typeof module !== 'undefined') {
     minutesByDate, computeStats,
     sessionLang, KNOWN_TYPES, normType, TODO_TYPES, watchKey, legacyWatchKey, migrateWatchKeys,
     sessionWatchKeys, startsDone,
-    videoIdFromUrl, normShow, contentLinks, doneItemIds,
+    videoIdFromUrl, normShow, episodeLoggedOn, contentLinks, doneItemIds,
     withDoneAt, compareWatchlist, orderWatchlist, doneAtLabel,
     assignDefaultStates, pruneDeadKeys, goalStatusAll, goalStatusSingle,
     vacationDay, VACATION_SCREEN_LIMIT_MIN,

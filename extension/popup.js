@@ -385,7 +385,7 @@ async function runSeriesLookup() {
 }
 
 [mSeriesName, mSeason, mEpisode].forEach((el) =>
-  el.addEventListener('input', scheduleSeriesLookup));
+  el.addEventListener('input', () => { rewatchConfirmed = ''; scheduleSeriesLookup(); }));
 
 /* ── Reading timer ────────────────────────── */
 // One-tap timer for Kindle/paper reading, which can't be auto-detected.
@@ -444,6 +444,22 @@ async function renderReadingTimer() {
 }
 
 /* ── Manual entry ─────────────────────────── */
+// The episode the user was warned about and pressed Add on again — that
+// second press means a rewatch and saves. Any edit to the episode clears it.
+let rewatchConfirmed = '';
+const episodeKey = () => [normShow(mSeriesName.value), parseInt(mSeason.value, 10) || 1, mEpisode.value].join('|');
+
+// Date an episode is already logged on, or null. A failed lookup must not
+// block saving, so it reads as "not logged".
+async function episodeAlreadyLogged(channel, season, episode) {
+  try {
+    const rows = await sb.listSessions(`select=date,type,channel,season,episode&type=eq.series&episode=eq.${episode}`);
+    return episodeLoggedOn(rows, { channel, season, episode });
+  } catch {
+    return null;
+  }
+}
+
 document.getElementById('manualForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const minutes = parseInt(mMinutes.value, 10);
@@ -458,6 +474,17 @@ document.getElementById('manualForm').addEventListener('submit', async (e) => {
   const btn = e.target.querySelector('button[type=submit]');
   btn.disabled = true;
   try {
+    const season = parseInt(mSeason.value, 10) || null;
+    const episode = parseInt(mEpisode.value, 10) || null;
+    if (isSeries && episode && rewatchConfirmed !== episodeKey()) {
+      const loggedOn = await episodeAlreadyLogged(mSeriesName.value.trim(), season, episode);
+      if (loggedOn) {
+        rewatchConfirmed = episodeKey();
+        seriesLookupStatus.hidden = false;
+        seriesLookupStatus.textContent = `${t('alreadyLogged')} ${loggedOn} ${t('alreadyLoggedHint')}`;
+        return;
+      }
+    }
     await sb.insertSession({
       date: document.getElementById('mDate').value,
       seconds: minutes * 60,
@@ -467,8 +494,8 @@ document.getElementById('manualForm').addEventListener('submit', async (e) => {
       source: 'manual',
       ...(isSeries ? {
         channel: mSeriesName.value.trim(),
-        season: parseInt(mSeason.value, 10) || null,
-        episode: parseInt(mEpisode.value, 10) || null,
+        season,
+        episode,
       } : {}),
     });
     // Remember the title to prefill the next reading-timer stop — chapter
@@ -481,6 +508,7 @@ document.getElementById('manualForm').addEventListener('submit', async (e) => {
     mSeason.value = '';
     mEpisode.value = '';
     seriesLookupStatus.textContent = '';
+    rewatchConfirmed = '';
     btn.textContent = t('added');
     setTimeout(() => { btn.textContent = t('addSession'); }, 1200);
     loadStats();

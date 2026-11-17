@@ -19,6 +19,7 @@ const {
 
   vacationDay,
   VACATION_SCREEN_LIMIT_MIN,
+  episodeLoggedOn,
 } = require('../rules.js');
 
 const min = (m) => m * 60; // minutes -> seconds, for session fixtures
@@ -887,4 +888,39 @@ test('the goal status still works when nobody passes today\'s rows', () => {
   assert.equal(goalStatusSingle(60, 30).done, false);
   assert.equal(goalStatusAll({ fr: 60, en: 60 }, 70, 70).done, true);
   assert.equal(goalStatusSingle(60, 70).vacation, false);
+});
+
+/* ── An episode typed in by hand that is already logged: Chicago P.D S9E16–18
+   went in on 15 Nov 2026 and again on the 17th, counting two hours twice ── */
+const ep = (date, channel, season, episode, extra = {}) =>
+  ({ date, type: 'series', channel, season, episode, seconds: 2520, ...extra });
+
+test('an episode already logged reports the first date it was logged on', () => {
+  const rows = [ep('2026-11-17', 'Chicago P.D', 9, 16), ep('2026-11-15', 'Chicago P.D', 9, 16)];
+  assert.equal(episodeLoggedOn(rows, { channel: 'Chicago P.D', season: 9, episode: 16 }), '2026-11-15');
+});
+
+test('the show name matches loosely, as the tracker and a hand may spell it differently', () => {
+  const rows = [ep('2026-11-15', 'Dix pour cent', 1, 2)];
+  assert.equal(episodeLoggedOn(rows, { channel: '  DIX pour Cent ', season: 1, episode: 2 }), '2026-11-15');
+});
+
+test('a missing season reads as season 1 — single-season shows carry no season marker', () => {
+  const rows = [ep('2026-11-15', 'Gimy show', null, 3)];
+  assert.equal(episodeLoggedOn(rows, { channel: 'Gimy show', season: 1, episode: 3 }), '2026-11-15');
+});
+
+test('another episode, season, show or type is not a match', () => {
+  const rows = [
+    ep('2026-11-15', 'Chicago P.D', 9, 17),
+    ep('2026-11-15', 'Chicago P.D', 8, 16),
+    ep('2026-11-15', 'Chicago Fire', 9, 16),
+    ep('2026-11-15', 'Chicago P.D', 9, 16, { type: 'youtube' }),
+  ];
+  assert.equal(episodeLoggedOn(rows, { channel: 'Chicago P.D', season: 9, episode: 16 }), null);
+});
+
+test('without an episode number there is nothing to compare', () => {
+  const rows = [ep('2026-11-15', 'Chicago P.D', 9, null)];
+  assert.equal(episodeLoggedOn(rows, { channel: 'Chicago P.D', season: 9, episode: null }), null);
 });
