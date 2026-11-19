@@ -4,13 +4,14 @@
 // watchKey (rules.js) and sessionRowFields needs t() (i18n.js): globals in
 // the browser (both load before this file, see dashboard.html), required
 // directly here in Node.
-let watchKey, pad, t;
+let watchKey, pad, todayKey, t;
 if (typeof require !== 'undefined') {
-  ({ watchKey, pad } = require('./rules.js'));
+  ({ watchKey, pad, todayKey } = require('./rules.js'));
   ({ t } = require('./i18n.js'));
 } else {
   watchKey = globalThis.watchKey;
   pad = globalThis.pad;
+  todayKey = globalThis.todayKey;
   t = globalThis.t;
 }
 
@@ -64,8 +65,8 @@ function groupSameContent(sessions) {
 
 // Shared field computation for a group of merged rows (same content, one or
 // more days) — used by both the Recent Sessions list and the CSV export so
-// the two can't drift out of formatting sync.
-function sessionRowFields(rows) {
+// the two can't drift out of formatting sync. `today` is injectable for tests.
+function sessionRowFields(rows, today = todayKey()) {
   const s = rows[0];
   const episodeTag = s.type === 'series' && s.season && s.episode ? `S${s.season}E${s.episode} · ` : '';
   const title = episodeTag + (s.title || t('untitled'));
@@ -80,20 +81,34 @@ function sessionRowFields(rows) {
   const imported = rows.some((r) => r.source === 'import');
 
   const totalSeconds = rows.reduce((sum, r) => sum + r.seconds, 0);
-  // A single combined total across days hides how it's actually split —
-  // e.g. "55m" for a podcast episode listened to in a 37m sitting one day
-  // and an 18m sitting the next reads as one continuous block. Show each
-  // day's own total instead, oldest first (matching the date range above).
-  let durationText;
+  // Two readings of the same duration, for two different audiences.
+  //
+  // durationByDay is every day's own total, oldest first. A bare combined
+  // total would hide how the time was actually split — "55m" for a podcast
+  // heard in a 37m sitting and an 18m one reads as a single block — so this
+  // is what the CSV carries, where the split is the data.
+  //
+  // durationText is what the list shows. The by-day form does not survive
+  // contact with a book: Campus Drivers: Supermad spent eleven days in one
+  // row and rendered as "55m + 41m + 26m + 9m + 39m + 31m + 27m + 17m + 44m
+  // + 7m + 17m", which is unreadable and looks like something is wrong.
+  // Naming the day count keeps the one thing the bare total loses — that the
+  // time is not continuous — in four words instead of eleven numbers. The
+  // by-day form is still there, as the cell's tooltip.
+  //
+  // When the group ran today, today's share leads: a video watched across a
+  // week reads "38m today · 2h 19m over 6 days", which answers "how much
+  // today?" first and still shows the whole.
+  const byDate = {};
+  for (const r of rows) byDate[r.date] = (byDate[r.date] || 0) + r.seconds;
+  const durationByDay = dates.map((d) => fmtMinutes(byDate[d] / 60)).join(' + ');
+  let durationText = fmtMinutes(totalSeconds / 60);
   if (dates.length > 1) {
-    const byDate = {};
-    for (const r of rows) byDate[r.date] = (byDate[r.date] || 0) + r.seconds;
-    durationText = dates.map((d) => fmtMinutes(byDate[d] / 60)).join(' + ');
-  } else {
-    durationText = fmtMinutes(totalSeconds / 60);
+    durationText += ` ${t('overNDays').replace('%n', dates.length)}`;
+    if (byDate[today]) durationText = `${t('durationToday').replace('%t', fmtMinutes(byDate[today] / 60))} · ${durationText}`;
   }
 
-  return { s, title, dateText, timeText, channel: s.channel || '', auto, imported, durationText, totalSeconds };
+  return { s, title, dateText, timeText, channel: s.channel || '', auto, imported, durationText, durationByDay, totalSeconds };
 }
 
 if (typeof module !== 'undefined') {

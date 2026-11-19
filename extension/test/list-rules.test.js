@@ -129,13 +129,29 @@ test('a single-day group shows one date and one combined duration', () => {
   assert.equal(fields.durationText, '15m');
 });
 
-test('a multi-day group shows a date range and per-day durations, not one combined total', () => {
+test('a multi-day group leads with today\'s time, then the total and the day count', () => {
+  const rows = [
+    { date: '2026-11-14', seconds: 6060, source: 'auto', title: 'X' }, // 1h 41m
+    { date: '2026-11-19', seconds: 2280, source: 'auto', title: 'X' }, // 38m today
+  ];
+  const fields = sessionRowFields(rows, '2026-11-19');
+  assert.equal(fields.dateText, '2026-11-14 → 2026-11-19');
+  assert.equal(fields.durationText, '38m today · 2h 19m over 2 days');
+  // The split per day is still there for the tooltip and the CSV.
+  assert.equal(fields.durationByDay, '1h 41m + 38m');
+});
+
+test('a multi-day group with nothing today shows only the total and the day count', () => {
   const fields = sessionRowFields([
     { date: '2026-07-20', seconds: 2220, source: 'manual', title: 'X' }, // 37m
     { date: '2026-07-21', seconds: 1080, source: 'manual', title: 'X' }, // 18m
-  ]);
-  assert.equal(fields.dateText, '2026-07-20 → 2026-07-21');
-  assert.equal(fields.durationText, '37m + 18m');
+  ], '2026-11-19');
+  assert.equal(fields.durationText, '55m over 2 days');
+});
+
+test('a single-day group today is just its duration — no "today", no day count', () => {
+  const fields = sessionRowFields([{ date: '2026-11-19', seconds: 900, source: 'manual', title: 'X' }], '2026-11-19');
+  assert.equal(fields.durationText, '15m');
 });
 
 test('auto flag is set for auto/anki/apple/spotify sources, not manual', () => {

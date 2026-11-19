@@ -502,8 +502,8 @@ function mergeIntervals(intervals) {
 
 // Shared field computation for a group of merged rows (same content, one or
 // more days) — used by both the Recent Sessions list and the CSV export so
-// the two can't drift out of formatting sync.
-function sessionRowFields(rows) {
+// the two can't drift out of formatting sync. `today` is injectable for tests.
+function sessionRowFields(rows, today = todayKey()) {
   const s = rows[0];
   const episodeTag = s.type === 'series' && s.season && s.episode ? `S${s.season}E${s.episode} · ` : '';
   const title = episodeTag + (s.title || t('untitled'));
@@ -533,12 +533,18 @@ function sessionRowFields(rows) {
   // Naming the day count keeps the one thing the bare total loses — that the
   // time is not continuous — in four words instead of eleven numbers. The
   // by-day form is still there, as the cell's tooltip.
+  //
+  // When the group ran today, today's share leads: a video watched across a
+  // week reads "38m today · 2h 19m over 6 days", which answers "how much
+  // today?" first and still shows the whole.
   const byDate = {};
   for (const r of rows) byDate[r.date] = (byDate[r.date] || 0) + r.seconds;
   const durationByDay = dates.map((d) => fmtMinutes(byDate[d] / 60)).join(' + ');
-  const durationText = dates.length > 1
-    ? `${fmtMinutes(totalSeconds / 60)} ${t('overNDays').replace('%n', dates.length)}`
-    : fmtMinutes(totalSeconds / 60);
+  let durationText = fmtMinutes(totalSeconds / 60);
+  if (dates.length > 1) {
+    durationText += ` ${t('overNDays').replace('%n', dates.length)}`;
+    if (byDate[today]) durationText = `${t('durationToday').replace('%t', fmtMinutes(byDate[today] / 60))} · ${durationText}`;
+  }
 
   return {
     s, title, dateText, timeText, channel: s.channel || '', auto, imported,
